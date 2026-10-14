@@ -1,0 +1,48 @@
+#if canImport(UIKit)
+import Foundation
+
+/// Every sentence the sheet shows, in one place. English only in 0.1; the worker's own refusal
+/// sentences are shown as the worker wrote them.
+enum Strings {
+  static let title = "Send feedback"
+  static let cancel = "Cancel"
+  static let send = "Send"
+  static let done = "Done"
+  static let remove = "Remove"
+  static let messagePlaceholder = "What happened? What did you expect?"
+  static let messageLabel = "Message"
+  static let category = "Category"
+  static let categories: [(FeedbackCategory, String)] = [(.bug, "Bug"), (.idea, "Idea"), (.question, "Question"), (.other, "Other")]
+  static let point = "Point at the problem"
+  static let pointAgain = "Point somewhere else"
+  static let clearSelection = "Clear"
+  static let includeScreenshot = "Include screenshot"
+  static let screenshotPreview = "Screenshot that will be sent"
+  static let emailPlaceholder = "Email (optional)"
+  static let emailFootnote = "Optional. The team may reply to this address."
+  static let sending = "Sending…"
+  static let sent = "Sent. Thank you."
+  static let savedForLater = "Saved. It will be sent the next time the app opens."
+  static let pointerHint = "Tap the part of the screen that's wrong"
+  static let pointerImage = "Frozen screenshot"
+  static let pointerImageHint = "Touch the part of the screen that is wrong."
+
+  static func selected(_ element: FeedbackElement) -> String {
+    if let label = element.label, !label.isEmpty { return "\(element.type) “\(label)”" }
+    return element.type
+  }
+
+  /// "Will be sent: your message, the selected element, the screenshot, logs from this session and
+  /// device details."
+  static func willSend(element: Bool, screenshot: Bool, logs: Bool, email: Bool) -> String {
+    var parts = ["your message"]
+    if element { parts.append("the selected element") }
+    if screenshot { parts.append("the screenshot") }
+    if logs { parts.append("logs from this session") }
+    if email { parts.append("your email address") }
+    parts.append("device and app details")
+    let list = parts.count > 1 ? parts.dropLast().joined(separator: ", ") + " and " + parts.last! : parts[0]
+    return "Will be sent: \(list)."
+  }
+}
+#endif

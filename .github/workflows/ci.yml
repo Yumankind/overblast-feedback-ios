@@ -1,0 +1,51 @@
+# The gate on the public mirror, github.com/Yumankind/overblast-feedback-ios.
+#
+# It lives at the PACKAGE ROOT rather than in the monorepo's own `.github/`, because `git subtree
+# split` makes this directory the root of the mirror: what is here is what the mirror runs, and it is
+# the one place the two repositories cannot disagree about.
+#
+# Two legs. `swift test` runs the core (payload, limits, redaction, client, pending store) on macOS,
+# where the UIKit half compiles to nothing. A simulator build is the cheapest thing that compiles the
+# UIKit half at all: the shake hook, the screenshot, the element picker and the sheet.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: swift build and test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build -v
+      - name: Test
+        run: swift test -v
+
+  ios-simulator:
+    name: xcodebuild (iOS Simulator)
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `-Package` is every target including the sample, which has no product of its own and would
+        # otherwise never be compiled for a phone.
+        scheme: [OverblastFeedback, OverblastFeedback-Package]
+    steps:
+      - uses: actions/checkout@v4
+      # `-quiet` and no pretty-printer: a pipe into one hides xcodebuild's exit status.
+      - name: Build ${{ matrix.scheme }} for the simulator
+        run: |
+          xcodebuild build -quiet \
+            -scheme ${{ matrix.scheme }} \
+            -destination 'generic/platform=iOS Simulator'
