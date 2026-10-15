@@ -194,12 +194,33 @@ final class FeedbackSheetModel: ObservableObject {
       status = Status(text: text, isError: error)
     }
     Announce.say(text)
-    if close {
+    if close, symbol != nil {
+      // Closes on Done or Esc, or by itself once the sentence has had time to be read; the pointer
+      // over it, or VoiceOver on Done, holds it.
+      confirmationTimer = ConfirmationTimer(text: text, startedAt: Date())
       Task { @MainActor [weak self] in
-        try? await Task.sleep(nanoseconds: 1_600_000_000)
-        self?.onFinish()
+        while let self, self.confirmationTimer?.closedBy == nil {
+          if self.confirmationTimer?.tick(at: Date()) == true {
+            self.onFinish()
+            return
+          }
+          try? await Task.sleep(nanoseconds: 200_000_000)
+        }
       }
     }
+  }
+
+  /// The confirmation's clock.
+  private(set) var confirmationTimer: ConfirmationTimer?
+
+  /// Done or Esc: closes now, once.
+  func closeConfirmation(_ reason: ConfirmationTimer.CloseReason) {
+    guard confirmationTimer?.close(reason) == true else { return }
+    onFinish()
+  }
+
+  func holdConfirmation(_ hold: ConfirmationTimer.Hold, _ on: Bool) {
+    if on { confirmationTimer?.hold(hold, at: Date()) } else { confirmationTimer?.release(hold, at: Date()) }
   }
 }
 
@@ -226,6 +247,7 @@ struct FieldsHeightKey: PreferenceKey {
 struct FeedbackSheetView: View {
   @ObservedObject var model: FeedbackSheetModel
   @FocusState private var messageFocused: Bool
+  @AccessibilityFocusState private var doneFocused: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var radius: CGFloat { ThemeUI.radius }
@@ -252,10 +274,33 @@ struct FeedbackSheetView: View {
           Text(confirmation.text)
             .font(ThemeUI.swiftUIFont(.title3, weight: .semibold))
             .multilineTextAlignment(.center)
+            // Two even lines rather than a full one and a lonely word.
+            .frame(maxWidth: ThemeUI.balancedWidth(confirmation.text, style: .title3, bold: true, available: 480 - 64))
             .fixedSize(horizontal: false, vertical: true)
+          Button(Strings.done) { model.closeConfirmation(.done) }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .accessibilityFocused($doneFocused)
+            .padding(.top, 8)
+          // Esc closes it too.
+          Button("") { model.closeConfirmation(.escape) }
+            .keyboardShortcut(.cancelAction)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
         }
         .padding(32)
         .frame(maxWidth: .infinity, minHeight: 180)
+        .onHover { model.holdConfirmation(.hover, $0) }
+        .onChange(of: doneFocused) { model.holdConfirmation(.voiceOverFocus, $0) }
+        .onAppear {
+          // The sentence is announced (by the model); then VoiceOver's focus goes to Done.
+          Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            doneFocused = true
+          }
+        }
         .transition(reduceMotion ? .identity : .scale(scale: 0.85).combined(with: .opacity))
       }
     }

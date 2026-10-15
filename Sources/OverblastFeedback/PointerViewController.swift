@@ -184,6 +184,10 @@ final class PointerViewController: UIViewController {
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    let room = view.safeAreaLayoutGuide.layoutFrame.width - 32 - 36
+    if abs(hint.preferredMaxLayoutWidth - BalancedWrap.width(singleLine: ThemeUI.singleLineWidth(hint.text ?? "", font: hint.font), available: room)) > 0.5 {
+      hint.balance(within: room)
+    }
     updateSelectionUI()
   }
 

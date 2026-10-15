@@ -115,3 +115,106 @@ public enum PickThumbnail {
     return r.intersection(CGRect(origin: .zero, size: pixelSize))
   }
 }
+
+/// Short centred messages wrapped into lines of about the same length, instead of a full first line
+/// and a lonely word on the second ("…and we're on" / "it.").
+public enum BalancedWrap {
+  /// How many lines a text `singleLine` points wide needs in `available` points.
+  public static func lineCount(singleLine: CGFloat, available: CGFloat) -> Int {
+    guard available > 0, singleLine > available else { return 1 }
+    return Int((singleLine / available).rounded(.up))
+  }
+
+  /// The width to give the text: its own width when it fits on one line, otherwise its width shared
+  /// equally between the lines it needs, plus `slack` for word boundaries, never wider than
+  /// `available`.
+  public static func width(singleLine: CGFloat, available: CGFloat, slack: CGFloat = 8) -> CGFloat {
+    guard available > 0 else { return singleLine }
+    let lines = lineCount(singleLine: singleLine, available: available)
+    if lines <= 1 { return min(singleLine, available) }
+    return min(available, (singleLine / CGFloat(lines)).rounded(.up) + slack)
+  }
+
+  /// `text` with a line break at the space that makes its two halves most equal by `measure`, for a
+  /// place whose width cannot be set (an alert's title). Text without a space comes back unchanged.
+  public static func twoLines(_ text: String, measure: (String) -> CGFloat) -> String {
+    let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+    guard words.count > 1 else { return text }
+    var best = text
+    var bestGap = CGFloat.greatestFiniteMagnitude
+    for i in 1..<words.count {
+      let first = words[..<i].joined(separator: " ")
+      let second = words[i...].joined(separator: " ")
+      let gap = abs(measure(first) - measure(second))
+      // On a tie, the break after a sentence or a clause wins.
+      let afterPunctuation = first.last.map { ".,;:?!".contains($0) } ?? false
+      if gap < bestGap || (gap == bestGap && afterPunctuation) {
+        bestGap = gap
+        best = first + "\n" + second
+      }
+    }
+    return best
+  }
+}
+
+/// How long the "Sent" confirmation stays before it closes by itself, and what keeps it open: timed
+/// to its sentence (about two seconds for the thank-you, four for "we already know about this one"),
+/// held while the pointer is over it or VoiceOver is on its Done button, and closed once, by whichever
+/// comes first: Done, the close button, Esc, a swipe down, or the time running out. The clock is
+/// passed in, so the rules are tested without waiting.
+public struct ConfirmationTimer: Sendable, Equatable {
+  public enum Hold: Hashable, Sendable { case hover, voiceOverFocus }
+  public enum CloseReason: Sendable, Equatable { case done, closeButton, escape, swipe, timeout }
+
+  public let duration: TimeInterval
+  public let startedAt: Date
+  public private(set) var holds: Set<Hold> = []
+  /// Time spent held, so far, not counting a hold still on.
+  public private(set) var heldFor: TimeInterval = 0
+  public private(set) var heldSince: Date?
+  public private(set) var closedBy: CloseReason?
+
+  public init(text: String, startedAt: Date) {
+    self.duration = ConfirmationTimer.duration(for: text)
+    self.startedAt = startedAt
+  }
+
+  /// A little over a second, plus a quarter of a second a word, between 2 and 6 seconds: "Sent.
+  /// Thank you." is 2 s, the known-issue sentence about 4.
+  public static func duration(for text: String) -> TimeInterval {
+    let words = text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
+    return min(6, max(2, 1.2 + 0.25 * Double(words)))
+  }
+
+  public mutating func hold(_ hold: Hold, at now: Date) {
+    guard closedBy == nil else { return }
+    if holds.isEmpty { heldSince = now }
+    holds.insert(hold)
+  }
+
+  public mutating func release(_ hold: Hold, at now: Date) {
+    guard holds.remove(hold) != nil, holds.isEmpty, let since = heldSince else { return }
+    heldFor += now.timeIntervalSince(since)
+    heldSince = nil
+  }
+
+  /// Seconds left before it closes by itself; nil while it is held or once it has closed.
+  public func remaining(at now: Date) -> TimeInterval? {
+    guard closedBy == nil, holds.isEmpty else { return nil }
+    return max(0, duration - (now.timeIntervalSince(startedAt) - heldFor))
+  }
+
+  /// Closes it, and says whether this call was the one that did (a second close does nothing).
+  @discardableResult
+  public mutating func close(_ reason: CloseReason) -> Bool {
+    guard closedBy == nil else { return false }
+    closedBy = reason
+    return true
+  }
+
+  /// Closes it when its time has run out; true when that happened now.
+  public mutating func tick(at now: Date) -> Bool {
+    guard let left = remaining(at: now), left <= 0 else { return false }
+    return close(.timeout)
+  }
+}

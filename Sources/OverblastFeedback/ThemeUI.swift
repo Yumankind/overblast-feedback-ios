@@ -62,6 +62,12 @@ enum ThemeUI {
 
   static var accentColor: Color { Color(uiColor: accent()) }
   static var installedFamilies: [String] { UIFont.familyNames }
+
+  /// One line of `text` in `font`, in points.
+  static func singleLineWidth(_ text: String, font: UIFont) -> CGFloat {
+    (text as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
+  }
+
   #else
   static func accent(_ window: NSWindow? = nil) -> NSColor {
     if let c = theme.accent { return NSColor(cgColor: c.cgColor) ?? .controlAccentColor }
@@ -74,6 +80,21 @@ enum ThemeUI {
   }
 
   static var installedFamilies: [String] { NSFontManager.shared.availableFontFamilies }
+
+  /// The AppKit font the SwiftUI font for `style` stands for, for measuring.
+  static func measuringFont(_ style: Font.TextStyle, bold: Bool = false) -> NSFont {
+    let size = swiftUISize(style)
+    if let family = theme.resolvedFontFamily(installed: installedFamilies), let name = fontName(family: family, bold: bold), let font = NSFont(name: name, size: size) {
+      return font
+    }
+    return NSFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+  }
+
+  /// The width a short centred SwiftUI text should be given so its lines come out even.
+  static func balancedWidth(_ text: String, style: Font.TextStyle, bold: Bool = false, available: CGFloat) -> CGFloat {
+    let single = (text as NSString).size(withAttributes: [.font: measuringFont(style, bold: bold)]).width.rounded(.up)
+    return BalancedWrap.width(singleLine: single, available: available)
+  }
   #endif
 
   /// The SwiftUI font for `style`: the theme's family scaled relative to the style, or the system's.
@@ -136,6 +157,20 @@ enum ThemeUI {
     @unknown default: return 17
     }
     #endif
+  }
+}
+#endif
+
+#if canImport(UIKit)
+extension UILabel {
+  /// Wraps this centred label into lines of about the same length within `available` points, and
+  /// never leaves a single word on the last line.
+  func balance(within available: CGFloat) {
+    lineBreakStrategy = .pushOut
+    guard let text, !text.isEmpty, available > 0 else { return }
+    let single = ThemeUI.singleLineWidth(text, font: font)
+    preferredMaxLayoutWidth = BalancedWrap.width(singleLine: single, available: available)
+    invalidateIntrinsicContentSize()
   }
 }
 #endif

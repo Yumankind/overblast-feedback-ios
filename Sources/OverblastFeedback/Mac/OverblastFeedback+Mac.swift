@@ -318,7 +318,9 @@ enum CrashOffer {
     guard let window = ScreenContext.appWindow(), window.attachedSheet == nil else { return }
     showing = true
     let alert = NSAlert()
-    alert.messageText = Strings.crashOffer
+    // An alert's width cannot be set, so the title is broken where its two lines come out even.
+    let bold = NSFont.boldSystemFont(ofSize: 13)
+    alert.messageText = BalancedWrap.twoLines(Strings.crashOffer) { ($0 as NSString).size(withAttributes: [.font: bold]).width }
     alert.alertStyle = .informational
     alert.addButton(withTitle: Strings.crashOfferSend)
     alert.addButton(withTitle: Strings.crashOfferLater)

@@ -275,6 +275,10 @@ final class PromptPill {
     // Visible without becoming key: the app keeps its keyboard focus and its first responder.
     window.isHidden = false
     root.view.layoutIfNeeded()
+    // The sentence's share of the pill, wrapped evenly when it needs two lines.
+    let pillRoom = min(520, guide.layoutFrame.width - 24)
+    label.balance(within: pillRoom - 24 - 10 - report.intrinsicContentSize.width - 10 - 44)
+    root.view.layoutIfNeeded()
 
     if UIAccessibility.isReduceMotionEnabled {
       pill.alpha = 1

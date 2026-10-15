@@ -156,3 +156,80 @@ final class KnownIssueTests: XCTestCase {
     XCTAssertEqual(FeedbackMessages(sentKnownIssue: "On it!").thankYou(for: known), "On it!")
   }
 }
+
+/// Balanced wrapping of short centred messages.
+final class BalancedWrapTests: XCTestCase {
+  func testTheWidthIsSharedBetweenTheLines() {
+    XCTAssertEqual(BalancedWrap.lineCount(singleLine: 200, available: 300), 1)
+    XCTAssertEqual(BalancedWrap.width(singleLine: 200, available: 300), 200, "fits: its own width")
+    XCTAssertEqual(BalancedWrap.lineCount(singleLine: 420, available: 300), 2)
+    XCTAssertEqual(BalancedWrap.width(singleLine: 420, available: 300), 218, "two lines of about 210, plus slack")
+    XCTAssertEqual(BalancedWrap.lineCount(singleLine: 700, available: 300), 3)
+    XCTAssertEqual(BalancedWrap.width(singleLine: 700, available: 300), 242)
+    XCTAssertEqual(BalancedWrap.width(singleLine: 599, available: 300, slack: 20), 300, "never wider than the room")
+    XCTAssertEqual(BalancedWrap.width(singleLine: 50, available: 0), 50)
+  }
+
+  func testTheKnownIssueSentenceSplitsIntoTwoEvenLines() {
+    // Characters as the measure: close enough to a proportional font for a sentence.
+    let measure: (String) -> CGFloat = { CGFloat($0.count) }
+    let split = BalancedWrap.twoLines("Thanks. We already know about this one and we're on it.", measure: measure)
+    let lines = split.split(separator: "\n").map(String.init)
+    XCTAssertEqual(lines.count, 2)
+    let (a, b) = (CGFloat(lines[0].count), CGFloat(lines[1].count))
+    XCTAssertLessThanOrEqual(abs(a - b) / max(a, b), 0.2, "\(lines)")
+    XCTAssertFalse(lines[1] == "it.")
+    XCTAssertEqual(BalancedWrap.twoLines("Sent.", measure: measure), "Sent.")
+    // An even tie: the break goes after the sentence.
+    XCTAssertEqual(BalancedWrap.twoLines("The app closed unexpectedly. Send a report?", measure: measure), "The app closed unexpectedly.\nSend a report?")
+  }
+}
+
+/// The "Sent" confirmation: timed to its words, held by hover or VoiceOver, closed once.
+final class ConfirmationTimerTests: XCTestCase {
+  let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+  func at(_ s: TimeInterval) -> Date { t0.addingTimeInterval(s) }
+
+  func testTimedToTheSentence() {
+    XCTAssertEqual(ConfirmationTimer.duration(for: "Sent. Thank you."), 2, accuracy: 0.01)
+    XCTAssertEqual(ConfirmationTimer.duration(for: "Thanks. We already know about this one and we're on it."), 3.95, accuracy: 0.01)
+    XCTAssertEqual(ConfirmationTimer.duration(for: String(repeating: "word ", count: 60)), 6, "never longer than six seconds")
+  }
+
+  func testItClosesByItselfWhenTheTimeRunsOut() {
+    var timer = ConfirmationTimer(text: "Sent. Thank you.", startedAt: t0)
+    XCTAssertFalse(timer.tick(at: at(1.9)))
+    XCTAssertEqual(timer.remaining(at: at(1.5)) ?? -1, 0.5, accuracy: 0.001)
+    XCTAssertTrue(timer.tick(at: at(2.0)))
+    XCTAssertEqual(timer.closedBy, .timeout)
+    XCTAssertFalse(timer.tick(at: at(3)), "closed once")
+  }
+
+  func testHoverAndVoiceOverHoldItOpen() {
+    var timer = ConfirmationTimer(text: "Sent. Thank you.", startedAt: t0)
+    timer.hold(.hover, at: at(1))
+    XCTAssertNil(timer.remaining(at: at(10)))
+    XCTAssertFalse(timer.tick(at: at(10)))
+    timer.hold(.voiceOverFocus, at: at(10))
+    timer.release(.hover, at: at(11))
+    XCTAssertFalse(timer.tick(at: at(20)), "still on Done with VoiceOver")
+    timer.release(.voiceOverFocus, at: at(20))
+    // Held from 1 to 20: one second had passed, one is left.
+    XCTAssertEqual(timer.remaining(at: at(20)) ?? -1, 1, accuracy: 0.001)
+    XCTAssertFalse(timer.tick(at: at(20.9)))
+    XCTAssertTrue(timer.tick(at: at(21)))
+  }
+
+  func testEveryCloseClosesOnceAndStopsTheClock() {
+    for reason: ConfirmationTimer.CloseReason in [.done, .closeButton, .escape, .swipe] {
+      var timer = ConfirmationTimer(text: "Sent. Thank you.", startedAt: t0)
+      XCTAssertTrue(timer.close(reason))
+      XCTAssertFalse(timer.close(.done))
+      XCTAssertEqual(timer.closedBy, reason)
+      XCTAssertNil(timer.remaining(at: at(0.5)))
+      XCTAssertFalse(timer.tick(at: at(5)))
+      timer.hold(.hover, at: at(1))
+      XCTAssertTrue(timer.holds.isEmpty, "a closed confirmation is not held")
+    }
+  }
+}

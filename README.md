@@ -134,8 +134,11 @@ Undo and Clear. The edited picture replaces the original, so the pixels under a 
 not kept anywhere, and the private-view masks are painted again on top of every edit, so no edit can
 uncover them.
 
-**After Send** the sheet shows a checkmark and "Sent. Thank you." for a moment (announced to
-VoiceOver), then goes. When the report joined an issue the team already has (`FeedbackReceipt.known`),
+**After Send** the sheet shows a checkmark, "Sent. Thank you." and a **Done** button. Done, the close
+button, Esc on a Mac or a swipe down closes it at once; otherwise it goes by itself once the sentence
+has had time to be read (about two seconds for the thank-you, four for the longer one below), and it
+waits while the pointer is over it (Mac, Vision Pro) or VoiceOver is on Done. VoiceOver reads the
+sentence, then moves to Done. Short centred sentences are wrapped into even lines. When the report joined an issue the team already has (`FeedbackReceipt.known`),
 it says "Thanks. We already know about this one and we're on it." instead; nothing else about the
 issue is shown. A refusal leaves the sheet open with the service's own sentence.
 

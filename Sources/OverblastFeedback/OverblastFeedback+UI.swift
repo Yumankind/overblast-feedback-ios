@@ -160,7 +160,12 @@ final class FeedbackPresenter {
     guard overlay == nil, OverblastFeedback.isConfigured, let appWindow = ScreenContext.appWindow(),
           let root = makeOverlay(over: appWindow)
     else { return }
-    let alert = UIAlertController(title: Strings.crashOffer, message: nil, preferredStyle: .alert)
+    // An alert's width cannot be set, so the title is broken where its two lines come out even.
+    let titleFont = UIFont.preferredFont(forTextStyle: .headline)
+    let title = ThemeUI.singleLineWidth(Strings.crashOffer, font: titleFont) > 230
+      ? BalancedWrap.twoLines(Strings.crashOffer) { ThemeUI.singleLineWidth($0, font: titleFont) }
+      : Strings.crashOffer
+    let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
     alert.view.tintColor = ThemeUI.accent(appWindow)
     alert.addAction(UIAlertAction(title: Strings.crashOfferLater, style: .cancel) { [weak self] _ in
       OverblastFeedback.forgetPreviousSession()

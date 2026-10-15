@@ -686,6 +686,16 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
 
   /// "Sent. Thank you." with a checkmark over the whole sheet for a moment and a VoiceOver
   /// announcement, then the sheet goes.
+  /// The confirmation's clock: timed to its sentence, held by hover (visionOS) or VoiceOver on Done.
+  private(set) var confirmationTimer: ConfirmationTimer?
+  private weak var doneButton: UIButton?
+  private var announcementObserver: NSObjectProtocol?
+  private var focusObserver: NSObjectProtocol?
+
+  /// "Sent. Thank you." with a checkmark over the whole sheet and a Done button. It closes on Done,
+  /// the close button, a swipe down, or by itself once the sentence has had time to be read; the
+  /// pointer over it (visionOS) or VoiceOver on Done holds it. VoiceOver reads the sentence, then its
+  /// focus lands on Done.
   func showConfirmation(_ text: String, symbol: String) {
     let overlay = UIView()
     overlay.backgroundColor = .systemGroupedBackground
@@ -699,9 +709,27 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     label.adjustsFontForContentSizeCategory = true
     label.numberOfLines = 0
     label.textAlignment = .center
-    let column = UIStackView(arrangedSubviews: [icon, label])
+
+    var config = UIButton.Configuration.filled()
+    config.title = Strings.done
+    config.baseBackgroundColor = accent
+    config.baseForegroundColor = ThemeUI.onAccent(appWindow)
+    config.background.cornerRadius = ThemeUI.theme.cornerRadius(forHeight: 44)
+    config.cornerStyle = .fixed
+    config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 28, bottom: 10, trailing: 28)
+    config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { a in
+      var a = a
+      a.font = ThemeUI.font(.headline, weight: .semibold)
+      return a
+    }
+    let done = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in self?.closeConfirmation(.done) })
+    done.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+    doneButton = done
+
+    let column = UIStackView(arrangedSubviews: [icon, label, done])
     column.axis = .vertical
     column.spacing = 14
+    column.setCustomSpacing(24, after: label)
     column.alignment = .center
     column.translatesAutoresizingMaskIntoConstraints = false
     overlay.addSubview(column)
@@ -716,7 +744,13 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
       column.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
       column.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
     ])
-    navigationItem.leftBarButtonItem = nil
+    // The close button stays, and closes at once; a swipe down still dismisses the sheet.
+    navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.closeConfirmation(.closeButton) })
+    isModalInPresentation = false
+    // Two even lines rather than a full one and a lonely word.
+    label.balance(within: view.safeAreaLayoutGuide.layoutFrame.width - 48)
+    label.widthAnchor.constraint(lessThanOrEqualToConstant: max(label.preferredMaxLayoutWidth, 1)).isActive = true
+    view.layoutIfNeeded()
     if UIAccessibility.isReduceMotionEnabled {
       overlay.alpha = 1
     } else {
@@ -730,16 +764,69 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     #if !os(visionOS)
     UINotificationFeedbackGenerator().notificationOccurred(.success)
     #endif
+
+    confirmationTimer = ConfirmationTimer(text: text, startedAt: Date())
+    #if os(visionOS)
+    overlay.addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(confirmationHover(_:))))
+    #endif
+    // VoiceOver: the sentence first, then focus on Done; while it is there, the clock waits.
+    let center = NotificationCenter.default
+    announcementObserver = center.addObserver(forName: UIAccessibility.announcementDidFinishNotification, object: nil, queue: .main) { [weak done] _ in
+      MainActor.assumeIsolated { if let done { UIAccessibility.post(notification: .layoutChanged, argument: done) } }
+    }
+    focusObserver = center.addObserver(forName: UIAccessibility.elementFocusedNotification, object: nil, queue: .main) { [weak self] note in
+      // Only the focused element's identity crosses into the main actor.
+      let focused = (note.userInfo?[UIAccessibility.focusedElementUserInfoKey] as AnyObject?).map(ObjectIdentifier.init)
+      MainActor.assumeIsolated {
+        guard let self, let done = self.doneButton else { return }
+        if focused == ObjectIdentifier(done) {
+          self.confirmationTimer?.hold(.voiceOverFocus, at: Date())
+        } else {
+          self.confirmationTimer?.release(.voiceOverFocus, at: Date())
+        }
+      }
+    }
     UIAccessibility.post(notification: .announcement, argument: text)
     Task { @MainActor [weak self] in
-      try? await Task.sleep(nanoseconds: 1_600_000_000)
-      self?.onFinish()
+      while let self, self.confirmationTimer?.closedBy == nil {
+        if self.confirmationTimer?.tick(at: Date()) == true {
+          self.finishConfirmation()
+          return
+        }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+      }
     }
+  }
+
+  #if os(visionOS)
+  @objc private func confirmationHover(_ gesture: UIHoverGestureRecognizer) {
+    switch gesture.state {
+    case .began, .changed: confirmationTimer?.hold(.hover, at: Date())
+    default: confirmationTimer?.release(.hover, at: Date())
+    }
+  }
+  #endif
+
+  /// Done, the close button or a swipe: closes now, once.
+  func closeConfirmation(_ reason: ConfirmationTimer.CloseReason) {
+    guard confirmationTimer?.close(reason) == true else { return }
+    finishConfirmation()
+  }
+
+  private func finishConfirmation() {
+    [announcementObserver, focusObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
+    announcementObserver = nil
+    focusObserver = nil
+    onFinish()
   }
 
   // MARK: UIAdaptivePresentationControllerDelegate
 
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    // A swipe down on the confirmation is a close like any other.
+    if confirmationTimer?.close(.swipe) == true {
+      [announcementObserver, focusObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
+    }
     logsTask?.cancel()
     if isAboutPreviousSession { OverblastFeedback.forgetPreviousSession() }
     FeedbackPresenter.shared.tearDown()
