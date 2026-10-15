@@ -180,9 +180,80 @@ final class AppKitTests: XCTestCase {
   func testThePointerPictureFitsTheWindow() {
     // A big window shows the picture at nearly its own size; a tiny one borrows the screen.
     let big = PointerModel.displayScale(content: CGSize(width: 1200, height: 800), window: CGSize(width: 1200, height: 800), screen: CGSize(width: 1512, height: 944))
-    XCTAssertEqual(big, (800 - 56 - 40) / 800, accuracy: 0.001)
+    XCTAssertEqual(big, (800 - 96 - 40) / 800, accuracy: 0.001)
     let tiny = PointerModel.displayScale(content: CGSize(width: 300, height: 120), window: CGSize(width: 300, height: 120), screen: CGSize(width: 1512, height: 944))
     XCTAssertEqual(tiny, 1)
+  }
+
+  // MARK: The room for the sheet
+
+  func testTheSheetIsHeldToTheRoomUnderTheWindowsContent() {
+    let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
+    // The content's height, less the margin.
+    XCTAssertEqual(SheetSpace.available(content: CGRect(x: 100, y: 300, width: 800, height: 500), visible: visible), 476)
+    // A window running off the bottom of the screen: only what is visible under its top counts.
+    XCTAssertEqual(SheetSpace.available(content: CGRect(x: 100, y: -200, width: 800, height: 700), visible: visible), 451)
+    // Taller than the screen: the screen.
+    XCTAssertEqual(SheetSpace.available(content: CGRect(x: 0, y: 25, width: 800, height: 2000), visible: visible), 851)
+    XCTAssertTrue(SheetSpace.usesPanel(available: 300))
+    XCTAssertFalse(SheetSpace.usesPanel(available: 500))
+    XCTAssertEqual(SheetSpace.panelHeight(visible: visible), 720)
+    XCTAssertEqual(SheetSpace.panelHeight(visible: CGRect(x: 0, y: 0, width: 1024, height: 600)), 552)
+  }
+
+  /// The bug: with the screenshot on, the sheet grew to its content (about 770 points) and ran past a
+  /// 500-point window and off the screen.
+  func testTheTallStateStaysInsideAShortWindow() async throws {
+    OverblastFeedback.configure(
+      key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
+      options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
+      session: nil, store: PendingStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("obf-mac-\(UUID().uuidString)")),
+      defaults: UserDefaults(suiteName: "obf-tests-\(UUID().uuidString)")
+    )
+    let short = NSWindow(contentRect: NSRect(x: 100, y: 200, width: 800, height: 500), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    short.isReleasedWhenClosed = false
+    short.appearance = NSAppearance(named: .aqua)
+    short.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+    short.orderFront(nil)
+    defer { FeedbackPresenter.shared.dismiss(); short.orderOut(nil) }
+    FeedbackPresenter.shared.present(in: short)
+    let model = try XCTUnwrap(FeedbackPresenter.shared.model)
+    model.message = "It overflows"
+    model.includeScreenshot = true
+    try await Task.sleep(nanoseconds: 800_000_000)
+    let sheet = try XCTUnwrap(short.attachedSheet)
+    let room = SheetSpace.available(content: short.convertToScreen(short.contentLayoutRect), visible: short.screen?.visibleFrame)
+    XCTAssertLessThanOrEqual(sheet.frame.height, room + 1, "sheet \(sheet.frame) in room \(room)")
+    XCTAssertGreaterThan(sheet.frame.height, 300)
+
+    // The window is made shorter: the sheet follows.
+    short.setContentSize(NSSize(width: 800, height: 440))
+    try await Task.sleep(nanoseconds: 800_000_000)
+    let smaller = SheetSpace.available(content: short.convertToScreen(short.contentLayoutRect), visible: short.screen?.visibleFrame)
+    XCTAssertLessThanOrEqual(try XCTUnwrap(short.attachedSheet).frame.height, smaller + 1)
+  }
+
+  func testATooShortWindowGetsAPanelInstead() async throws {
+    OverblastFeedback.configure(
+      key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
+      options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
+      session: nil, store: PendingStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("obf-mac-\(UUID().uuidString)")),
+      defaults: UserDefaults(suiteName: "obf-tests-\(UUID().uuidString)")
+    )
+    let tiny = NSWindow(contentRect: NSRect(x: 100, y: 200, width: 500, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+    tiny.isReleasedWhenClosed = false
+    tiny.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    tiny.orderFront(nil)
+    defer { FeedbackPresenter.shared.dismiss(); tiny.orderOut(nil) }
+    FeedbackPresenter.shared.present(in: tiny)
+    try await Task.sleep(nanoseconds: 500_000_000)
+    XCTAssertTrue(FeedbackPresenter.shared.usesPanel)
+    XCTAssertNil(tiny.attachedSheet)
+    let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0 is FeedbackSheetWindow && $0.isVisible })
+    XCTAssertTrue(panel.styleMask.contains(.resizable))
+    if let visible = panel.screen?.visibleFrame {
+      XCTAssertTrue(visible.contains(panel.frame), "\(panel.frame) inside \(visible)")
+    }
   }
 
   // MARK: SwiftUI

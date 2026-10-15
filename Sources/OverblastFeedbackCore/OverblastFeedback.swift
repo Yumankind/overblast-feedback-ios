@@ -36,6 +36,11 @@ public struct FeedbackOptions: Sendable, Equatable {
   /// never answered, can set off the error prompt when the key asks for `server_error` or `network`.
   /// Seen only through the network recorder (`recordNetwork`).
   public var appHosts: [String]
+  /// The report UI's brand: accent colour, font family, corner radius. The default is the app's own
+  /// tint and the system font.
+  public var theme: FeedbackTheme
+  /// The sentences the sheet says after Send, for your own wording or language.
+  public var messages: FeedbackMessages
 
   public init(
     shakeToReport: Bool = DeviceInfo.deliversShake,
@@ -49,7 +54,9 @@ public struct FeedbackOptions: Sendable, Equatable {
     device: Bool = true,
     screenshots: Bool = true,
     errorPrompt: Bool = true,
-    appHosts: [String] = []
+    appHosts: [String] = [],
+    theme: FeedbackTheme = .system,
+    messages: FeedbackMessages = FeedbackMessages()
   ) {
     self.shakeToReport = shakeToReport && DeviceInfo.deliversShake
     self.captureOSLog = captureOSLog
@@ -63,6 +70,26 @@ public struct FeedbackOptions: Sendable, Equatable {
     self.screenshots = screenshots
     self.errorPrompt = errorPrompt
     self.appHosts = appHosts
+    self.theme = theme
+    self.messages = messages
+  }
+}
+
+/// The sheet's sentences after Send. The service's own refusal sentences are shown as it wrote them.
+public struct FeedbackMessages: Sendable, Equatable {
+  /// The usual thank-you.
+  public var sent: String
+  /// When the report joined an issue the team already has (`FeedbackReceipt.known`).
+  public var sentKnownIssue: String
+
+  public init(sent: String = "Sent. Thank you.", sentKnownIssue: String = "Thanks. We already know about this one and we're on it.") {
+    self.sent = sent
+    self.sentKnownIssue = sentKnownIssue
+  }
+
+  /// The thank-you for this receipt.
+  public func thankYou(for receipt: FeedbackReceipt) -> String {
+    receipt.known ? sentKnownIssue : sent
   }
 }
 

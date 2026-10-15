@@ -111,11 +111,56 @@ row. From UIKit or AppKit, call `OverblastFeedback.present()` from your own butt
 | `view.overblastPrivate = true`, `.overblastPrivate()` | Never in a screenshot (`UIView`, `NSView`, SwiftUI). |
 | `.overblastElement("id")` | Makes a SwiftUI view selectable by name (see below). |
 
-The sheet has a message (required), a category (bug, idea, question, other; bug by default), **Point
-at the problem**, **Include screenshot** (off), an email field when you did not supply one, and a line
-saying exactly what will be sent. It uses system fonts and colours, so text size, dark mode and
-VoiceOver work as they do in the rest of your app. On iOS and visionOS it opens in a window of its own
-above yours; on macOS it is a sheet on your window. Your view controllers are never touched.
+### The sheet
+
+- **On iPhone and iPad** it is a native sheet that opens at half height (with the grabber) and grows
+  to full height when the keyboard rises or the content needs the room. At the top, the categories as
+  chips: only the key's, and none at all when it takes one, when the sheet is titled "Report a
+  problem". Then a large message field, **Point at the problem**, **Include screenshot** (off), an
+  email field when you did not supply one, and a line saying exactly what will be sent. **Send** sits
+  in a bar pinned above the keyboard, so it is never hidden behind it.
+- **On Vision Pro** it is a form sheet on the system's glass; the pointer's bars and the error pill use
+  the system materials, and buttons and chips have hover effects.
+- **On a Mac** it is a sheet attached to the window, in the same order.
+
+**Point at the problem** shows the frozen screenshot with one line at the top ("Tap the part that's
+wrong"). A tap highlights the part it found (a clear box in your accent, the rest dimmed) and names
+it, and nothing is taken until the person presses **Use this**. Back in the form, the pick is a small
+thumbnail of that part of the screenshot with its box, its name, **Change** and **Remove**.
+
+**The screenshot** is off on every report. Turned on, it shows a preview; tapping it opens an editor
+where the person drags rectangles to **cover** (a solid box) or **blur** parts before sending, with
+Undo and Clear. The edited picture replaces the original, so the pixels under a cover or a blur are
+not kept anywhere, and the private-view masks are painted again on top of every edit, so no edit can
+uncover them.
+
+**After Send** the sheet shows a checkmark and "Sent. Thank you." for a moment (announced to
+VoiceOver), then goes. When the report joined an issue the team already has (`FeedbackReceipt.known`),
+it says "Thanks. We already know about this one and we're on it." instead; nothing else about the
+issue is shown. A refusal leaves the sheet open with the service's own sentence.
+
+Text follows Dynamic Type (and the Mac's text size), dark mode and VoiceOver work as in the rest of
+your app, and with Reduce Motion nothing animates. On iOS and visionOS the sheet opens in a window of
+its own above yours, in the scene the person is using; on macOS it is a sheet on your window. Your view
+controllers are never touched.
+
+### Your brand
+
+```swift
+OverblastFeedback.start(key: "obfk_...", options: FeedbackOptions(
+  theme: FeedbackTheme(
+    accent: FeedbackTheme.Color(hex: "#E8590C"),   // nil: your app's tint (the window's tintColor, or the accent colour on a Mac)
+    fontFamily: "Avenir Next",                     // nil, or a family the app does not have: the system font
+    cornerRadius: 20                               // 0 to 28; 12 by default
+  ),
+  messages: FeedbackMessages(sent: "Thanks!")      // the thank-you sentences, for your wording or language
+))
+```
+
+The theme reaches the sheet, its chips and buttons, the pointer screen, the screenshot editor, the
+error pill and the crash offer (its alert's buttons on iOS; a Mac `NSAlert` keeps the system's look).
+Fonts in your family are scaled for Dynamic Type like the system font, and the label on an accent
+button is white or black, whichever reads on it.
 
 ## Options
 
@@ -461,6 +506,12 @@ the reporter, a private view, a secure field, a log line, the Settings button an
 - A privacy manifest.
 - The sheet stays inside a sideways safe area (iPhone Duo's closed display, landscape).
 - Sizes are decimal: the screenshot at most 5,000,000 bytes, the body 8,000,000.
+- The report UI, redone: brand theming (`FeedbackOptions.theme`), a half-height sheet that grows,
+  category chips, Send pinned above the keyboard, a clearer pointer with a confirm step and a
+  thumbnail of the pick, a screenshot editor (cover or blur), and a "Sent" confirmation, with "we
+  already know about this one" when the 201 says `known` (`FeedbackReceipt.known`,
+  `FeedbackOptions.messages`).
+- Fixed: the pick's box replaced the element in the screenshot with a flat tint instead of tinting it.
 
 ### 0.1.0
 

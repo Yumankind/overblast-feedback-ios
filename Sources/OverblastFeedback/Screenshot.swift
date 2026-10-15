@@ -43,7 +43,7 @@ enum ScreenshotRenderer {
 
   /// `image` with a box drawn round `rect` (window points). The picture the team sees is the one the
   /// reporter saw, so the box is in the image itself rather than in metadata a viewer might not draw.
-  static func highlighted(_ image: UIImage, rect: CGRect) -> UIImage {
+  static func highlighted(_ image: UIImage, rect: CGRect, color: UIColor = highlightColor) -> UIImage {
     let format = UIGraphicsImageRendererFormat()
     format.scale = image.scale
     format.opaque = true
@@ -51,9 +51,11 @@ enum ScreenshotRenderer {
     return renderer.image { ctx in
       image.draw(at: .zero)
       let box = rect.insetBy(dx: -2, dy: -2)
-      highlightColor.withAlphaComponent(0.15).setFill()
-      ctx.fill(box)
-      highlightColor.setStroke()
+      color.withAlphaComponent(0.15).setFill()
+      // `.normal`: the renderer context's plain `fill` copies, which would replace the element with
+      // the tint instead of tinting it, and the team would see an empty box.
+      ctx.fill(box, blendMode: .normal)
+      color.setStroke()
       let path = UIBezierPath(roundedRect: box, cornerRadius: 4)
       path.lineWidth = 3
       path.stroke()
@@ -94,10 +96,10 @@ enum ScreenshotRenderer {
   }
 
   /// A finished screenshot for the payload.
-  static func screenshot(from capture: ScreenCapture, element: FeedbackElement?) -> FeedbackScreenshot? {
+  static func screenshot(from capture: ScreenCapture, element: FeedbackElement?, color: UIColor = highlightColor) -> FeedbackScreenshot? {
     var image = capture.image
     if let element, element.rect.w > 0, element.rect.h > 0 {
-      image = highlighted(image, rect: rect(for: element, in: capture.windowSize))
+      image = highlighted(image, rect: rect(for: element, in: capture.windowSize), color: color)
     }
     guard let data = jpeg(image) else { return nil }
     return FeedbackScreenshot(jpeg: data, highlighted: element != nil)

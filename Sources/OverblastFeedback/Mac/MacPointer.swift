@@ -35,7 +35,7 @@ final class PointerModel: ObservableObject {
   /// The size the picture is shown at: the window's own size when the sheet fits inside it, else
   /// scaled down to fit, and never smaller than half size on a tiny window when the screen has room.
   static func displayScale(content: CGSize, window: CGSize, screen: CGSize?) -> CGFloat {
-    let bar: CGFloat = 56
+    let bar: CGFloat = 96   // the hint line at the top and the bar at the bottom
     let w = max(content.width, 1), h = max(content.height, 1)
     var scale = min(1, (window.width - 40) / w, (window.height - bar - 40) / h)
     if scale < 0.5, let screen {
@@ -56,6 +56,13 @@ struct PointerView: View {
 
   var body: some View {
     VStack(spacing: 0) {
+      // The one line at the top: what to do.
+      Text(Strings.pointerHint)
+        .font(ThemeUI.swiftUIFont(.callout, weight: .semibold))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .accessibilityAddTraits(.isHeader)
+      Divider()
       ZStack(alignment: .topLeading) {
         Image(nsImage: model.image)
           .resizable()
@@ -63,9 +70,10 @@ struct PointerView: View {
           .frame(width: displaySize.width, height: displaySize.height)
         if let selection = model.selection {
           let r = selection.frame
-          RoundedRectangle(cornerRadius: 4)
-            .fill(Color.red.opacity(0.15))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.red, lineWidth: 3))
+          RoundedRectangle(cornerRadius: min(ThemeUI.radius, 8))
+            .fill(ThemeUI.accentColor.opacity(0.15))
+            .overlay(RoundedRectangle(cornerRadius: min(ThemeUI.radius, 8)).stroke(ThemeUI.accentColor, lineWidth: 3))
+            .shadow(color: ThemeUI.accentColor.opacity(0.6), radius: 6)
             .frame(width: r.width * scale + 4, height: r.height * scale + 4)
             .offset(x: r.minX * scale - 2, y: r.minY * scale - 2)
             .allowsHitTesting(false)
@@ -103,18 +111,22 @@ struct PointerView: View {
         Button(Strings.cancel) { model.finish(keep: false) }
           .keyboardShortcut(.cancelAction)
         Spacer(minLength: 8)
-        Text(model.selection.map { Strings.selected($0.element) } ?? Strings.pointerHint)
-          .font(.callout)
+        Text(model.selection.map { Strings.selected($0.element) } ?? "")
+          .font(ThemeUI.swiftUIFont(.callout))
+          .foregroundStyle(.secondary)
           .lineLimit(2)
           .multilineTextAlignment(.center)
         Spacer(minLength: 8)
-        Button(Strings.done) { model.finish(keep: true) }
+        // Nothing is taken until the person confirms.
+        Button(Strings.useThis) { model.finish(keep: true) }
+          .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
           .disabled(model.selection == nil)
       }
       .padding(12)
     }
     .frame(width: max(displaySize.width, 360))
+    .tint(ThemeUI.accentColor)
   }
 }
 #endif

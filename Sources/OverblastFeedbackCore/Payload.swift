@@ -370,10 +370,24 @@ public struct FeedbackReceipt: Codable, Sendable, Equatable {
   public var taskId: String
   /// Present only when the reporter gave an email address.
   public var conversationId: String?
+  /// True when the report joined an issue the team already has (contract §3.3). The sheet then says
+  /// so in its thank-you; nothing else about the issue is ever shown.
+  public var known: Bool
 
-  public init(id: String, taskId: String, conversationId: String?) {
+  public init(id: String, taskId: String, conversationId: String?, known: Bool = false) {
     self.id = id
     self.taskId = taskId
     self.conversationId = conversationId
+    self.known = known
+  }
+
+  enum CodingKeys: String, CodingKey { case id, taskId, conversationId, known }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = try c.decode(String.self, forKey: .id)
+    taskId = try c.decode(String.self, forKey: .taskId)
+    conversationId = try c.decodeIfPresent(String.self, forKey: .conversationId)
+    known = (try? c.decodeIfPresent(Bool.self, forKey: .known)) ?? false
   }
 }

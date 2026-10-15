@@ -118,13 +118,22 @@ final class FeedbackPresenter {
     nav.modalPresentationStyle = .formSheet
     nav.presentationController?.delegate = sheet
     #else
+    // A native sheet that opens at half height and grows to full when the keyboard rises or the
+    // content asks for the room (the sheet does that itself); always above the app's own UI, in the
+    // scene the person is using.
     nav.modalPresentationStyle = .pageSheet
     nav.presentationController?.delegate = sheet
     if let sheetController = nav.sheetPresentationController {
-      sheetController.detents = [.large()]
+      sheetController.detents = [.medium(), .large()]
+      sheetController.selectedDetentIdentifier = .medium
       sheetController.prefersGrabberVisible = true
+      sheetController.prefersScrollingExpandsWhenScrolledToEdge = true
+      sheetController.prefersEdgeAttachedInCompactHeight = true
+      sheetController.widthFollowsPreferredContentSizeWhenEdgeAttached = true
+      sheetController.preferredCornerRadius = max(16, ThemeUI.radius + 8)
     }
     #endif
+    nav.view.tintColor = ThemeUI.accent(appWindow)
     root.present(nav, animated: true)
   }
 
@@ -152,6 +161,7 @@ final class FeedbackPresenter {
           let root = makeOverlay(over: appWindow)
     else { return }
     let alert = UIAlertController(title: Strings.crashOffer, message: nil, preferredStyle: .alert)
+    alert.view.tintColor = ThemeUI.accent(appWindow)
     alert.addAction(UIAlertAction(title: Strings.crashOfferLater, style: .cancel) { [weak self] _ in
       OverblastFeedback.forgetPreviousSession()
       self?.tearDown()

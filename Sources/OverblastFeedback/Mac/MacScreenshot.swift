@@ -86,12 +86,12 @@ enum ScreenshotRenderer {
 
   /// `image` (a picture of `size` points) with a box drawn round `rect` (points from the top-left).
   /// The picture the team sees is the one the reporter saw, so the box is in the image itself.
-  static func highlighted(_ image: CGImage, rect: CGRect, size: CGSize) -> CGImage {
+  static func highlighted(_ image: CGImage, rect: CGRect, size: CGSize, color: NSColor = highlightColor) -> CGImage {
     let scale = CGFloat(image.width) / max(size.width, 1)
     guard let ctx = Bitmap.context(width: image.width, height: image.height) else { return image }
     ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     let box = Bitmap.pixelRect(rect.insetBy(dx: -2, dy: -2), scale: scale, height: image.height)
-    let red = highlightColor.usingColorSpace(.sRGB)?.cgColor ?? CGColor(red: 1, green: 0.23, blue: 0.19, alpha: 1)
+    let red = color.usingColorSpace(.sRGB)?.cgColor ?? CGColor(red: 1, green: 0.23, blue: 0.19, alpha: 1)
     ctx.setFillColor(red.copy(alpha: 0.15) ?? red)
     ctx.fill(box)
     ctx.setStrokeColor(red)
@@ -149,10 +149,10 @@ enum ScreenshotRenderer {
   }
 
   /// A finished screenshot for the payload.
-  static func screenshot(from capture: ScreenCapture, element: FeedbackElement?) -> FeedbackScreenshot? {
+  static func screenshot(from capture: ScreenCapture, element: FeedbackElement?, color: NSColor = highlightColor) -> FeedbackScreenshot? {
     var image = capture.image
     if let element, element.rect.w > 0, element.rect.h > 0 {
-      image = highlighted(image, rect: rect(for: element, in: capture.windowSize), size: capture.windowSize)
+      image = highlighted(image, rect: rect(for: element, in: capture.windowSize), size: capture.windowSize, color: color)
     }
     guard let data = jpeg(image) else { return nil }
     return FeedbackScreenshot(jpeg: data, highlighted: element != nil)

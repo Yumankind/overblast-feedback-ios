@@ -189,15 +189,33 @@ final class PromptPill {
     window.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.alert.rawValue + 1)
     window.backgroundColor = .clear
     window.overrideUserInterfaceStyle = appWindow.overrideUserInterfaceStyle
-    window.tintColor = appWindow.tintColor
+    window.tintColor = ThemeUI.accent(appWindow)
     let root = UIViewController()
     root.view.backgroundColor = .clear
     window.rootViewController = root
 
     let pill = UIView()
     pill.translatesAutoresizingMaskIntoConstraints = false
+    #if os(visionOS)
+    // Glass, like the system's own ornaments.
+    pill.backgroundColor = .clear
+    let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterial))
+    glass.translatesAutoresizingMaskIntoConstraints = false
+    glass.clipsToBounds = true
+    glass.layer.cornerRadius = ThemeUI.theme.cornerRadius(forHeight: 60)
+    glass.layer.cornerCurve = .continuous
+    pill.addSubview(glass)
+    NSLayoutConstraint.activate([
+      glass.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
+      glass.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
+      glass.topAnchor.constraint(equalTo: pill.topAnchor),
+      glass.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
+    ])
+    #else
     pill.backgroundColor = .secondarySystemBackground
-    pill.layer.cornerRadius = 22
+    #endif
+    pill.layer.cornerRadius = ThemeUI.theme.cornerRadius(forHeight: 60)
+    pill.layer.cornerCurve = .continuous
     pill.layer.shadowColor = UIColor.black.cgColor
     pill.layer.shadowOpacity = 0.18
     pill.layer.shadowRadius = 12
@@ -206,7 +224,7 @@ final class PromptPill {
 
     let label = UILabel()
     label.text = Strings.promptText
-    label.font = .preferredFont(forTextStyle: .subheadline)
+    label.font = ThemeUI.font(.subheadline)
     label.adjustsFontForContentSizeCategory = true
     label.numberOfLines = 0
     label.textColor = .label
@@ -214,6 +232,13 @@ final class PromptPill {
     var reportConfig = UIButton.Configuration.filled()
     reportConfig.cornerStyle = .capsule
     reportConfig.title = Strings.promptReport
+    reportConfig.baseBackgroundColor = ThemeUI.accent(appWindow)
+    reportConfig.baseForegroundColor = ThemeUI.onAccent(appWindow)
+    reportConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { a in
+      var a = a
+      a.font = ThemeUI.font(.subheadline, weight: .semibold)
+      return a
+    }
     let report = UIButton(configuration: reportConfig, primaryAction: UIAction { _ in onReport() })
 
     let close = UIButton(type: .system)
@@ -314,8 +339,15 @@ final class PromptPill {
     host.frame.size = host.fittingSize
     panel.setContentSize(host.fittingSize)
     panel.contentView = host
-    let content = parent.contentLayoutRect
-    let origin = parent.convertPoint(toScreen: NSPoint(x: content.maxX - host.fittingSize.width - 16, y: content.minY + 16))
+    // Bottom right of the window's content, but always whole on the screen: a window smaller than
+    // the pill, or partly off screen, does not push it out of sight.
+    let size = host.fittingSize
+    let content = parent.convertToScreen(parent.contentLayoutRect)
+    var origin = NSPoint(x: content.maxX - size.width - 16, y: content.minY + 16)
+    if let visible = parent.screen?.visibleFrame {
+      origin.x = min(max(origin.x, visible.minX + 8), visible.maxX - size.width - 8)
+      origin.y = min(max(origin.y, visible.minY + 8), visible.maxY - size.height - 8)
+    }
     panel.setFrameOrigin(origin)
     parent.addChildWindow(panel, ordered: .above)
     let pill = PromptPill(panel: panel, parent: parent, onTimeout: onTimeout)
@@ -361,19 +393,20 @@ struct PromptPillView: View {
   var body: some View {
     HStack(spacing: 10) {
       Text(Strings.promptText)
-        .font(.callout)
+        .font(ThemeUI.swiftUIFont(.callout))
         .fixedSize()
       Button(Strings.promptReport) { onReport() }
         .buttonStyle(.borderedProminent)
         .controlSize(.small)
+        .tint(ThemeUI.accentColor)
       Button { onClose() } label: { Image(systemName: "xmark") }
         .buttonStyle(.borderless)
         .accessibilityLabel(Strings.promptClose)
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 8)
-    .background(RoundedRectangle(cornerRadius: 18).fill(Color(nsColor: .windowBackgroundColor)))
-    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color(nsColor: .separatorColor)))
+    .background(RoundedRectangle(cornerRadius: ThemeUI.theme.cornerRadius(forHeight: 36)).fill(Color(nsColor: .windowBackgroundColor)))
+    .overlay(RoundedRectangle(cornerRadius: ThemeUI.theme.cornerRadius(forHeight: 36)).stroke(Color(nsColor: .separatorColor)))
     .onHover { onHover($0) }
     .padding(4)
   }

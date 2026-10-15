@@ -230,7 +230,16 @@ final class UIKitTests: XCTestCase {
       for sub in view.subviews { if let found = find(type, in: sub) { return found } }
       return nil
     }
-    let category = try XCTUnwrap(find(UISegmentedControl.self, in: sheet.view))
+    // The last category chip ("Other"), the one that ran under the bar column before the fix.
+    func chip(_ title: String, in view: UIView) -> UIButton? {
+      if let b = view as? UIButton, b.configuration?.title == title { return b }
+      for sub in view.subviews { if let found = chip(title, in: sub) { return found } }
+      return nil
+    }
+    let other = try XCTUnwrap(chip("Other", in: sheet.view))
+    // The chips' row (a horizontal scroller round their stack): it, not each chip, is held inside
+    // the safe area; a chip beyond its edge scrolls into view.
+    let category = try XCTUnwrap(other.superview?.superview as? UIScrollView)
     let frame = category.convert(category.bounds, to: sheet.view)
     let safe = sheet.view.bounds.inset(by: sheet.view.safeAreaInsets)
     XCTAssertGreaterThanOrEqual(frame.minX, safe.minX, "\(frame) in \(safe)")
@@ -238,6 +247,21 @@ final class UIKitTests: XCTestCase {
     let message = try XCTUnwrap(find(UITextView.self, in: sheet.view))
     XCTAssertLessThanOrEqual(message.convert(message.bounds, to: sheet.view).maxX, safe.maxX)
     #endif
+  }
+
+  /// The pick's box tints the element; it must not replace it (a plain renderer `fill` copies).
+  func testTheHighlightTintsTheElementRatherThanErasingIt() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let black = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100), format: format).image { ctx in
+      UIColor.black.setFill()
+      ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+    }
+    let boxed = ScreenshotRenderer.highlighted(black, rect: CGRect(x: 20, y: 20, width: 60, height: 60), color: .white)
+    let inside = try XCTUnwrap(color(of: boxed, at: CGPoint(x: 50, y: 50)))
+    XCTAssertLessThan(inside.r, 0.3, "the black underneath shows through the 15 % tint")
+    XCTAssertGreaterThan(inside.r, 0.05)
   }
 
   private func color(of image: UIImage, at point: CGPoint) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
