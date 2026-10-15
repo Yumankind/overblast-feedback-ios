@@ -7,7 +7,7 @@ recent logs, the device, their account reference in your product, and a screensh
 attach one. After an unexpected end, the next launch offers to send a report about it.
 
 ```swift
-.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.0")
+.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.1")
 ```
 
 ```swift
@@ -96,7 +96,8 @@ row. From UIKit or AppKit, call `OverblastFeedback.present()` from your own butt
 |---|---|
 | `start(key:endpoint:reporter:options:)` | Sets up, installs shake-to-report on iPhone and iPad, opens this launch's session, and tries any kept reports once. |
 | `setReporter(email:name:accountRef:)` | Who is using the app. Works before `start` too. |
-| `present(category:message:trigger:)` | Opens the sheet. Nothing happens while one is already open. `trigger` is `.button` unless you say `.shortcut` or `.agent`. |
+| `present(category:message:trigger:onResult:)` | Opens the sheet. Nothing happens while one is already open. `trigger` is `.button` unless you say `.shortcut` or `.agent`. `onResult` hears what each Send came to. |
+| `onReportResult` | What every Send in the sheet came to, however the sheet was opened (shake, button, menu, error prompt, crash offer). |
 | `OverblastFeedbackButton`, `OverblastFeedbackCommands` | The Settings button and the Help menu item. |
 | `isShakeAvailable`, `isShakeEnabled` | Whether a shake can reach the app here (iPhone, iPad), and the switch. |
 | `log(_:_:)`, `debug`/`info`/`warn`/`error` | A line for the next report's logs. |
@@ -223,8 +224,8 @@ What leaves the device, and only when the person presses Send:
   the crash MetricKit reported, with a short call stack.
 - **Device and app details**: app version and build, system and version, model identifier
   (`iPhone15,3`, `Mac14,2`), locale, time zone, window size, the name of the screen they were on, when
-  and how the report was opened, and a random per-install id (in a `UserDefaults` suite of its own)
-  that the service uses for per-device rate limits instead of your users' IP address.
+  and how the report was opened, and a random per-install id (in a `UserDefaults` suite of its own,
+  one per app) that the service uses for per-device rate limits instead of your users' IP address.
 - **Their email**, only if you passed one or they typed one; their name and your account reference
   for them, only if you passed them.
 
@@ -420,6 +421,38 @@ try await OverblastFeedback.report(
 )
 ```
 
+## What Send came to
+
+The sheet tells the person how it went; your app can hear it too, to log the report id or a failure.
+`present(onResult:)` is for one sheet, `OverblastFeedback.onReportResult` for every sheet however it
+was opened (shake, `OverblastFeedbackButton`, the Help menu item, the error prompt, the offer after a
+crash). Both are called on the main actor, the opener's first, once for every Send pressed:
+
+```swift
+OverblastFeedback.onReportResult = { result in       // set it once, after start
+  switch result {
+  case .success(let receipt):
+    logger.info("feedback filed: \(receipt.id) task \(receipt.taskId) known \(receipt.known)")
+  case .failure(let error):
+    logger.error("feedback not filed: \(error.code ?? "-") \(error.message)")
+  }
+}
+
+OverblastFeedback.present(category: .idea) { result in
+  if case .success(let receipt) = result { analytics.track("feedback", id: receipt.id) }
+}
+```
+
+The value is a `FeedbackResult`, which is `Result<FeedbackReceipt, FeedbackError>`. A receipt carries
+the report's `id` (`fbr_...`), the `taskId`, the `conversationId` when the reporter gave an email, and
+`known` when the report joined an issue the team already has. A failure's `code` is the service's
+refusal code (`unknown_key`, `category_not_accepted`, `invalid_field`, ...). Two failures are not lost
+reports: `keepsForLater` (rate limited or no connection: kept and sent later) and `wasFiled`
+(`storage_full`: filed without its screenshot). A refusal leaves the sheet open, so a second Send is a
+second call. **Cancelling is not a result**: nothing was sent and neither closure is called (watch
+`isPresenting` if you need to know the sheet closed). `report(...)` returns or throws its own result
+and calls neither.
+
 ## Errors and kept reports
 
 Every refusal from the service carries a sentence written to be shown to the reporter, and
@@ -442,6 +475,25 @@ A report refused with `429` (the service allows 10 an hour and 30 a day per devi
 connection is kept in Application Support, excluded from backups, and tried **once** on the next
 launch and whenever you call `retryPending()`. Never on a timer and never in a loop: one refusal ends
 the run. At most ten are kept, none for longer than a week.
+
+## Where it keeps things
+
+Everything is kept per app, named after the app's bundle id (a command-line tool without one uses
+its executable's name):
+
+- The install id, the key's last settings and the error prompt's memory: the `UserDefaults` suite
+  `network.deployd.overblast-feedback.<bundle id>` (`DeviceInfo.defaultsSuite`).
+- The session marker and its saved logs: `Application Support/OverblastFeedback/<bundle id>/session`.
+- Kept reports: `Application Support/OverblastFeedback/<bundle id>/pending`.
+
+Both folders are excluded from backups. Up to 0.2.0 the names were the same in every app, which an
+unsandboxed Mac app shares with every other unsandboxed app on the Mac: one app could take another's
+unclosed session for its own crash and offer "The app closed unexpectedly" on its first launch. On the
+first launch with 0.2.1, an app whose old location was its own anyway (iOS, iPadOS, visionOS, a
+sandboxed Mac app) carries over its install id, kept reports and an unfinished session, then removes
+the old entries. An unsandboxed Mac app adopts nothing from the shared location, since none of it can
+be told apart as its own: it starts fresh, with a new install id, and leaves the shared files alone
+for the apps still on 0.2.0.
 
 ## How reports appear in Overblast
 
@@ -488,6 +540,20 @@ iPad app running on a Mac or on Apple Vision Pro, nothing is ever replaced.
 the reporter, a private view, a secure field, a log line, the Settings button and the Help menu item.
 
 ## Changelog
+
+### 0.2.1
+
+- **Storage per app.** The install id's suite and the session and kept-report folders carry the
+  app's bundle id, so unsandboxed Mac apps no longer share them (the false "The app closed
+  unexpectedly" on a first launch, another app's kept reports). Existing installs on iOS, iPadOS,
+  visionOS and sandboxed macOS keep their install id, kept reports and unfinished session; see
+  [Where it keeps things](#where-it-keeps-things).
+- **What Send came to**: `present(onResult:)` and `OverblastFeedback.onReportResult`, with the
+  receipt's ids or the `FeedbackError` and its code (`FeedbackResult`). Not called on Cancel.
+- macOS: the panel that replaces a sheet on a short window takes a level above the window it reports
+  on, so a menu-bar popover or another raised window no longer hides it; it comes forward even when
+  the app is not active, and with no key window the report opens on the app's frontmost window that
+  can take the keyboard (a menu-bar app's popover) when it has no ordinary one.
 
 ### 0.2.0
 

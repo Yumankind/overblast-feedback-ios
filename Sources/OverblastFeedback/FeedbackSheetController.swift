@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+@_spi(OverblastPlatform) import OverblastFeedbackCore
 import SwiftUI
 import UIKit
 
@@ -13,6 +14,9 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
   private let capture: ScreenCapture
   private weak var appWindow: UIWindow?
   private let onFinish: () -> Void
+  /// The opener's own handler for each Send's outcome (`present(onResult:)`); the app-wide
+  /// `OverblastFeedback.onReportResult` is called after it either way.
+  private let onResult: (@MainActor (FeedbackResult) -> Void)?
 
   private var category: FeedbackCategory
   var selection: ElementPicker.Selection?
@@ -57,7 +61,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
   private let sheetTitle: String
   private let offersScreenshot: Bool
 
-  init(capture: ScreenCapture, appWindow: UIWindow, category: FeedbackCategory?, message: String, trigger: FeedbackTrigger = .button, onFinish: @escaping () -> Void) {
+  init(capture: ScreenCapture, appWindow: UIWindow, category: FeedbackCategory?, message: String, trigger: FeedbackTrigger = .button, onResult: (@MainActor (FeedbackResult) -> Void)? = nil, onFinish: @escaping () -> Void) {
     let config = OverblastFeedback.effectiveConfig
     self.capture = capture
     self.appWindow = appWindow
@@ -68,6 +72,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     self.offersScreenshot = config.screenshots
     self.trigger = trigger
     self.onFinish = onFinish
+    self.onResult = onResult
     self.asksForEmail = OverblastFeedback.reporter?.email == nil
     super.init(nibName: nil, bundle: nil)
     messageView.text = message
@@ -639,10 +644,13 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     let crash = isAboutPreviousSession ? OverblastFeedback.previousSessionCrash : nil
     let messages = OverblastFeedback.options.messages
 
+    let onResult = self.onResult
+
     Task { @MainActor [weak self] in
       let logs = await logsTask?.value
+      let result: FeedbackResult
       do {
-        let receipt = try await OverblastFeedback.report(
+        result = .success(try await OverblastFeedback.report(
           message: message,
           category: category,
           reporter: reporter,
@@ -652,18 +660,21 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
           trigger: trigger,
           openedAt: openedAt,
           crash: crash
-        )
-        self?.finishSending(text: messages.thankYou(for: receipt), symbol: "checkmark.circle.fill", close: true)
-      } catch let error as FeedbackError {
-        if error.keepsForLater {
-          self?.finishSending(text: "\(error.message) \(Strings.savedForLater)", symbol: "clock.arrow.circlepath", close: true)
-        } else if error.wasFiled {
-          self?.finishSending(text: error.message, symbol: "checkmark.circle.fill", close: true)
-        } else {
-          self?.finishSending(text: error.message, symbol: nil, close: false)
-        }
+        ))
       } catch {
-        self?.finishSending(text: error.localizedDescription, symbol: nil, close: false)
+        result = .failure(OverblastFeedback.feedbackError(from: error))
+      }
+      // The app hears the outcome even when the sheet has gone in the meantime.
+      OverblastFeedback.deliverReportResult(result, to: onResult)
+      switch result {
+      case let .success(receipt):
+        self?.finishSending(text: messages.thankYou(for: receipt), symbol: "checkmark.circle.fill", close: true)
+      case let .failure(error) where error.keepsForLater:
+        self?.finishSending(text: "\(error.message) \(Strings.savedForLater)", symbol: "clock.arrow.circlepath", close: true)
+      case let .failure(error) where error.wasFiled:
+        self?.finishSending(text: error.message, symbol: "checkmark.circle.fill", close: true)
+      case let .failure(error):
+        self?.finishSending(text: error.message, symbol: nil, close: false)
       }
     }
   }

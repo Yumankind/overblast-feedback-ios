@@ -5,14 +5,20 @@ import AppKit
 /// Which window the person is in, and what to call it.
 @MainActor
 enum ScreenContext {
-  /// The app's key window, else its main window, else its frontmost ordinary window; never one of
-  /// this library's own. The key window can be the app's own sheet or panel, and then that is what
-  /// the person is looking at.
+  /// The app's key window, else its main window, else its frontmost ordinary window, else its
+  /// frontmost window of any level that could take the keyboard; never one of this library's own.
+  /// The key window can be the app's own sheet or panel, and then that is what the person is looking
+  /// at.
+  ///
+  /// The last step is for a menu-bar app with no key window: its only window may be a popover, which
+  /// is never main and sits above the normal level. `canBecomeKey` keeps out the status item's own
+  /// window and other chrome the person cannot be working in.
   static func appWindow() -> NSWindow? {
     let app = NSApplication.shared
     if let key = usable(app.keyWindow) { return key }
     if let main = usable(app.mainWindow) { return main }
     return app.orderedWindows.first { usable($0) != nil && $0.level == .normal }
+      ?? app.orderedWindows.first { usable($0) != nil && $0.canBecomeKey }
   }
 
   private static func usable(_ window: NSWindow?) -> NSWindow? {

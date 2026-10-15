@@ -29,11 +29,10 @@ public final class PendingStore: @unchecked Sendable {
     self.directory = directory
   }
 
-  /// `Application Support/OverblastFeedback/pending`.
+  /// `Application Support/OverblastFeedback/<bundle id>/pending`: this app's alone, so an unsandboxed
+  /// Mac app never sends another app's reports nor wipes them with its own data (`FeedbackStorage`).
   public static func defaultDirectory() -> URL {
-    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-      ?? FileManager.default.temporaryDirectory
-    return base.appendingPathComponent("OverblastFeedback", isDirectory: true).appendingPathComponent("pending", isDirectory: true)
+    FeedbackStorage.directory("pending")
   }
 
   private func ensureDirectory() throws {

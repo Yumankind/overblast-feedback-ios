@@ -56,12 +56,22 @@ extension OverblastFeedback {
   /// while a sheet is already open or before `start`. `trigger` is what the report says opened it:
   /// `.button` unless you say otherwise (`.shortcut` for a keyboard shortcut, `.agent` for an
   /// assistant).
-  @MainActor
   ///
   /// `category` nil opens on the key's default (its first category); one the key does not take is
   /// replaced by that default.
-  public static func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button) {
-    FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger)
+  ///
+  /// `onResult` is called on the main actor once for every Send pressed in this sheet, with the
+  /// receipt (`id`, `taskId`, `conversationId`, `known`) or the `FeedbackError` (its `code` is the
+  /// service's refusal code), before `OverblastFeedback.onReportResult`. It is not called when the
+  /// person cancels or swipes the sheet away, nor when the sheet does not open.
+  @MainActor
+  public static func present(
+    category: FeedbackCategory? = nil,
+    message: String = "",
+    trigger: FeedbackTrigger = .button,
+    onResult: (@MainActor (FeedbackResult) -> Void)? = nil
+  ) {
+    FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger, onResult: onResult)
   }
 
   /// True while the report sheet is on screen.
@@ -99,7 +109,12 @@ final class FeedbackPresenter {
 
   var isPresenting: Bool { overlay != nil }
 
-  func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button) {
+  func present(
+    category: FeedbackCategory? = nil,
+    message: String = "",
+    trigger: FeedbackTrigger = .button,
+    onResult: (@MainActor (FeedbackResult) -> Void)? = nil
+  ) {
     guard overlay == nil, OverblastFeedback.isConfigured,
           let appWindow = ScreenContext.appWindow(), appWindow.windowScene != nil
     else { return }
@@ -108,7 +123,7 @@ final class FeedbackPresenter {
     let capture = ScreenCapture.take(of: appWindow)
     guard let root = makeOverlay(over: appWindow) else { return }
 
-    let sheet = FeedbackSheetController(capture: capture, appWindow: appWindow, category: category, message: message, trigger: trigger) { [weak self] in
+    let sheet = FeedbackSheetController(capture: capture, appWindow: appWindow, category: category, message: message, trigger: trigger, onResult: onResult) { [weak self] in
       self?.dismiss()
     }
     let nav = UINavigationController(rootViewController: sheet)

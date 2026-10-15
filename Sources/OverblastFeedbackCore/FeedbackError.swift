@@ -68,3 +68,7 @@ public enum FeedbackError: Error, Sendable, Equatable {
 extension FeedbackError: LocalizedError {
   public var errorDescription: String? { message }
 }
+
+/// What one Send in the report sheet came to: the receipt when the report was filed, or why it was
+/// not (`OverblastFeedback.onReportResult`, and `present(onResult:)`).
+public typealias FeedbackResult = Result<FeedbackReceipt, FeedbackError>

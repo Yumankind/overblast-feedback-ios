@@ -136,7 +136,7 @@ public enum OverblastFeedback {
     defaults: UserDefaults?
   ) {
     assert(key.hasPrefix("obfk_"), "OverblastFeedback: a feedback key starts with obfk_. Copy it from the console's Feedback keys page.")
-    let suite = defaults ?? UserDefaults(suiteName: DeviceInfo.defaultsSuite) ?? .standard
+    let suite = defaults ?? FeedbackStorage.defaults()
     let config = Engine.Config(
       client: FeedbackClient(endpoint: endpoint, key: key, session: session),
       options: options,
@@ -449,6 +449,45 @@ public enum OverblastFeedback {
 
   /// How many reports are waiting to be sent.
   public static var pendingCount: Int { Engine.shared.config?.store.all().count ?? 0 }
+
+  // MARK: What the sheet's Send came to
+
+  /// Called once for every Send pressed in the report sheet, however the sheet was opened: shake,
+  /// `OverblastFeedbackButton`, the Help menu item, the error prompt, the offer after a crash, or
+  /// `present(...)` (whose own `onResult` is called first). On the main actor, after the answer and
+  /// before the sheet shows its confirmation or its error. For logging the report id, or a failure.
+  ///
+  /// - `.success(receipt)`: filed; `receipt.id` is the report (`fbr_...`), `receipt.taskId` the task,
+  ///   `receipt.conversationId` the email conversation when there is one, and `receipt.known` true
+  ///   when it joined an issue the team already has.
+  /// - `.failure(error)`: `error.code` is the service's refusal code where it sent one
+  ///   (`invalid_field`, `unknown_key`, `category_not_accepted`, `rate_limited`, ...). Two failures
+  ///   are not lost reports: `error.keepsForLater` (a rate limit or no connection; the report is kept
+  ///   and sent later) and `error.wasFiled` (`storage_full`: filed without its screenshot).
+  ///
+  /// A refusal leaves the sheet open, so pressing Send again is a second Send and a second call.
+  /// Cancelling is not a result and is never reported: nothing was sent, and an app that wants to
+  /// know the sheet closed can watch `isPresenting`. `report(...)` and `send(_:)` return or throw
+  /// their result directly and do not call this.
+  @MainActor
+  public static var onReportResult: (@MainActor (FeedbackResult) -> Void)?
+
+  /// The sheets' one way to hand a Send's outcome out: the caller's own `onResult`, then the
+  /// app-wide `onReportResult`.
+  @_spi(OverblastPlatform)
+  @MainActor
+  public static func deliverReportResult(_ result: FeedbackResult, to handler: (@MainActor (FeedbackResult) -> Void)?) {
+    handler?(result)
+    onReportResult?(result)
+  }
+
+  /// What `report(...)` threw, as the `FeedbackError` a `FeedbackResult` carries. Everything it throws
+  /// is one already; anything else (which this version never throws) becomes a report that could not
+  /// be prepared, which is how the sheets treat it: shown, not kept, not filed.
+  @_spi(OverblastPlatform)
+  public static func feedbackError(from error: any Error) -> FeedbackError {
+    (error as? FeedbackError) ?? .invalidReport(field: "body", message: error.localizedDescription)
+  }
 
   static func merge(_ base: FeedbackReporter?, _ override: FeedbackReporter?) -> FeedbackReporter? {
     guard let override else { return base }

@@ -3,18 +3,20 @@ import Foundation
 /// The install's random id and the facts about the device that go in `context`.
 public enum DeviceInfo {
   public static let sdkName = "overblast-feedback-ios"
-  public static let sdkVersion = "0.2.0"
+  public static let sdkVersion = "0.2.1"
 
-  /// The `UserDefaults` suite the device id lives in. A suite of its own, so an app that clears its
-  /// standard defaults on sign-out does not make every report look like a new device.
-  public static let defaultsSuite = "network.deployd.overblast-feedback"
+  /// The `UserDefaults` suite the device id lives in: `network.deployd.overblast-feedback.<bundle id>`.
+  /// A suite of its own, so an app that clears its standard defaults on sign-out does not make every
+  /// report look like a new device, and one per app, so unsandboxed Mac apps do not share it
+  /// (`FeedbackStorage`).
+  public static var defaultsSuite: String { FeedbackStorage.defaultsSuite }
   static let deviceIdKey = "deviceId"
 
   /// A random id kept per install: 32 lowercase hex characters, made on first use. It identifies
   /// nothing about the person or the hardware; it lets the worker count reports per device (§4)
   /// instead of per IP, which a whole office shares. Reinstalling the app makes a new one.
   public static func deviceId(defaults: UserDefaults? = nil) -> String {
-    let store = defaults ?? UserDefaults(suiteName: defaultsSuite) ?? .standard
+    let store = defaults ?? FeedbackStorage.defaults()
     if let existing = store.string(forKey: deviceIdKey), FeedbackText.isValidDeviceId(existing) {
       return existing
     }

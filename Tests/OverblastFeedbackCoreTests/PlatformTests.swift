@@ -47,6 +47,6 @@ final class PlatformTests: XCTestCase {
     let context = DeviceInfo.baseContext(deviceId: nil, extra: nil)
     XCTAssertEqual(context.platform, "ios")
     XCTAssertEqual(context.os, DeviceInfo.osName)
-    XCTAssertEqual(context.sdk?.version, "0.2.0")
+    XCTAssertEqual(context.sdk?.version, "0.2.1")
   }
 }

@@ -1,4 +1,5 @@
 #if os(macOS)
+@_spi(OverblastPlatform) import OverblastFeedbackCore
 import AppKit
 import Combine
 import SwiftUI
@@ -48,6 +49,9 @@ final class FeedbackSheetModel: ObservableObject {
   var onPoint: () -> Void = {}
   var onEdit: () -> Void = {}
   var onFinish: () -> Void = {}
+  /// The opener's own handler for each Send's outcome (`present(onResult:)`); the app-wide
+  /// `OverblastFeedback.onReportResult` is called after it either way.
+  var onResult: (@MainActor (FeedbackResult) -> Void)?
 
   /// What opened the sheet; `.relaunch` makes it a report about the previous session, with that
   /// session's saved logs and how it ended.
@@ -155,10 +159,13 @@ final class FeedbackSheetModel: ObservableObject {
     // Decided at Send, so a MetricKit diagnostic that arrived while the person typed is in it.
     let crash = isAboutPreviousSession ? OverblastFeedback.previousSessionCrash : nil
 
+    let onResult = self.onResult
+
     Task { @MainActor [weak self] in
       let logs = await logsTask?.value
+      let result: FeedbackResult
       do {
-        let receipt = try await OverblastFeedback.report(
+        result = .success(try await OverblastFeedback.report(
           message: message,
           category: category,
           reporter: reporter,
@@ -168,18 +175,21 @@ final class FeedbackSheetModel: ObservableObject {
           trigger: trigger,
           openedAt: openedAt,
           crash: crash
-        )
-        self?.finishSending(text: messages.thankYou(for: receipt), error: false, close: true, symbol: "checkmark.circle.fill")
-      } catch let error as FeedbackError {
-        if error.keepsForLater {
-          self?.finishSending(text: "\(error.message) \(Strings.savedForLater)", error: false, close: true, symbol: "clock.arrow.circlepath")
-        } else if error.wasFiled {
-          self?.finishSending(text: error.message, error: false, close: true, symbol: "checkmark.circle.fill")
-        } else {
-          self?.finishSending(text: error.message, error: true, close: false)
-        }
+        ))
       } catch {
-        self?.finishSending(text: error.localizedDescription, error: true, close: false)
+        result = .failure(OverblastFeedback.feedbackError(from: error))
+      }
+      // The app hears the outcome even when the sheet has gone in the meantime.
+      OverblastFeedback.deliverReportResult(result, to: onResult)
+      switch result {
+      case let .success(receipt):
+        self?.finishSending(text: messages.thankYou(for: receipt), error: false, close: true, symbol: "checkmark.circle.fill")
+      case let .failure(error) where error.keepsForLater:
+        self?.finishSending(text: "\(error.message) \(Strings.savedForLater)", error: false, close: true, symbol: "clock.arrow.circlepath")
+      case let .failure(error) where error.wasFiled:
+        self?.finishSending(text: error.message, error: false, close: true, symbol: "checkmark.circle.fill")
+      case let .failure(error):
+        self?.finishSending(text: error.message, error: true, close: false)
       }
     }
   }

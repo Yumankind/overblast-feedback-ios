@@ -198,10 +198,11 @@ public final class SessionStore: @unchecked Sendable {
     self.logBytes = logBytes
   }
 
+  /// `Application Support/OverblastFeedback/<bundle id>/session`: this app's alone, even in an
+  /// unsandboxed Mac app, where a folder shared with other apps made one app take another's unclosed
+  /// session for its own crash (`FeedbackStorage`).
   public static func defaultDirectory() -> URL {
-    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-      ?? FileManager.default.temporaryDirectory
-    return base.appendingPathComponent("OverblastFeedback", isDirectory: true).appendingPathComponent("session", isDirectory: true)
+    FeedbackStorage.directory("session")
   }
 
   private func url(_ name: String) -> URL { directory.appendingPathComponent(name) }

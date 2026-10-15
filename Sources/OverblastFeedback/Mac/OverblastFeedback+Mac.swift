@@ -49,12 +49,22 @@ extension OverblastFeedback {
   ///
   /// `trigger` is what the report says opened it: `.button` unless you say otherwise (`.shortcut`
   /// for a keyboard shortcut, `.agent` for an assistant).
-  @MainActor
   ///
   /// `category` nil opens on the key's default (its first category); one the key does not take is
   /// replaced by that default.
-  public static func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button) {
-    FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger)
+  ///
+  /// `onResult` is called on the main actor once for every Send pressed in this sheet, with the
+  /// receipt (`id`, `taskId`, `conversationId`, `known`) or the `FeedbackError` (its `code` is the
+  /// service's refusal code), before `OverblastFeedback.onReportResult`. It is not called when the
+  /// person cancels, nor when the sheet does not open.
+  @MainActor
+  public static func present(
+    category: FeedbackCategory? = nil,
+    message: String = "",
+    trigger: FeedbackTrigger = .button,
+    onResult: (@MainActor (FeedbackResult) -> Void)? = nil
+  ) {
+    FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger, onResult: onResult)
   }
 
   /// True while the report sheet is on screen.
@@ -103,6 +113,14 @@ enum SheetSpace {
 
   static func usesPanel(available: CGFloat) -> Bool { available < minUsable }
 
+  /// The panel's window level: above the window it reports on, and never below `.floating`, which is
+  /// what a floating panel would have had. A high-level window (a menu-bar popover, a status window)
+  /// gets a panel one level above it, so the panel is never hidden behind what it is about.
+  static func panelLevel(over parent: NSWindow.Level) -> NSWindow.Level {
+    let above = parent.rawValue < Int.max ? parent.rawValue + 1 : parent.rawValue
+    return NSWindow.Level(rawValue: max(NSWindow.Level.floating.rawValue, above))
+  }
+
   /// A panel's height on a screen: as tall as the form wants, never taller than the screen allows.
   static func panelHeight(visible: CGRect) -> CGFloat {
     max(240, min(maxPanelHeight, visible.height - 2 * margin))
@@ -128,12 +146,19 @@ final class FeedbackPresenter {
   /// True when the report opened in a panel rather than as a sheet.
   var usesPanel: Bool { panel != nil }
 
-  func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button, in window: NSWindow? = nil) {
+  func present(
+    category: FeedbackCategory? = nil,
+    message: String = "",
+    trigger: FeedbackTrigger = .button,
+    in window: NSWindow? = nil,
+    onResult: (@MainActor (FeedbackResult) -> Void)? = nil
+  ) {
     guard model == nil, OverblastFeedback.isConfigured, let appWindow = window ?? ScreenContext.appWindow(),
           // Frozen BEFORE anything of ours is on screen.
           let capture = ScreenCapture.take(of: appWindow)
     else { return }
     let model = FeedbackSheetModel(capture: capture, category: category, message: message, trigger: trigger)
+    model.onResult = onResult
     model.onPoint = { [weak self] in self?.showPointer() }
     model.onEdit = { [weak self] in self?.showEditor() }
     model.onFinish = { [weak self] in self?.dismiss() }
@@ -184,6 +209,10 @@ final class FeedbackPresenter {
     panel.minSize = NSSize(width: 420, height: 240)
     panel.maxSize = NSSize(width: 900, height: visible.height)
     panel.isFloatingPanel = true
+    // Above the window it reports on, whatever that window's level: a menu-bar popover or another
+    // raised window would otherwise sit over a merely floating panel and hide it (Deskslap's did).
+    // Set after `isFloatingPanel`, which resets the level to `.floating`.
+    panel.level = SheetSpace.panelLevel(over: appWindow.level)
     panel.hidesOnDeactivate = false
     let delegate = PanelDelegate { [weak self] in self?.model?.cancel() }
     panel.delegate = delegate
@@ -271,7 +300,13 @@ final class FeedbackPresenter {
         panel.setContentSize(NSSize(width: max(480, panel.contentLayoutRect.width), height: SheetSpace.panelHeight(visible: panel.screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800))))
         model.maxHeight = panel.contentLayoutRect.height
       }
-      if !panel.isVisible { panel.makeKeyAndOrderFront(nil) }
+      if !panel.isVisible {
+        panel.makeKeyAndOrderFront(nil)
+        // With the app not active (opened from a menu-bar item, or with no key window at all),
+        // ordering front alone leaves the panel behind other apps' windows until the app is
+        // activated; the panel is the thing the person asked for, so it comes forward regardless.
+        if !NSApplication.shared.isActive { panel.orderFrontRegardless() }
+      }
       return
     }
     host.sizingOptions = [.preferredContentSize]
