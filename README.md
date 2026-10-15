@@ -144,6 +144,12 @@ kept answer when the service cannot be reached. Before it has ever had an answer
 defaults: no device registration, no error prompt, screenshots offered. The console's Feedback keys
 page is where the owner sets them:
 
+- **categories**: the kinds of report the key takes, the first being the sheet's default. With bug
+  only, the sheet has no category choice and is titled "Report a problem"; with several, it offers
+  only those. `report(category:)` with one the key does not take is not sent, and throws
+  `.refused(403, "category_not_accepted", …)` ("This app only takes problem reports." for a
+  bug-only key). `present()` and `OverblastFeedbackButton` with no category open on the key's
+  default.
 - **screenshots**: off means the sheet does not offer one at all.
 - **errorPrompt**: on, with the kinds of error that count and the hours between prompts (below).
 - **verification**: whether the library registers the device. This version registers none; the
@@ -448,7 +454,7 @@ the reporter, a private view, a secure field, a log line, the Settings button an
 - The unified log keeps only the app's own lines (info and above, no `com.apple.*`).
 - After an unexpected end: the session marker, the log kept on disk, the chained exception handler,
   MetricKit's crash diagnostic, and the offer at the next launch (`crash`, `trigger: relaunch`).
-- The key's settings (`GET /v1/feedback/config`): screenshots, the error prompt, verification;
+- The key's settings (`GET /v1/feedback/config`): categories, screenshots, the error prompt, verification;
   options can only turn them off.
 - The error prompt, a pill after an unexpected error, a 5xx or a request with no answer from the
   app's own hosts.

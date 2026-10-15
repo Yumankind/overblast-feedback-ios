@@ -57,7 +57,10 @@ extension OverblastFeedback {
   /// `.button` unless you say otherwise (`.shortcut` for a keyboard shortcut, `.agent` for an
   /// assistant).
   @MainActor
-  public static func present(category: FeedbackCategory = .bug, message: String = "", trigger: FeedbackTrigger = .button) {
+  ///
+  /// `category` nil opens on the key's default (its first category); one the key does not take is
+  /// replaced by that default.
+  public static func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button) {
     FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger)
   }
 
@@ -96,7 +99,7 @@ final class FeedbackPresenter {
 
   var isPresenting: Bool { overlay != nil }
 
-  func present(category: FeedbackCategory = .bug, message: String = "", trigger: FeedbackTrigger = .button) {
+  func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button) {
     guard overlay == nil, OverblastFeedback.isConfigured,
           let appWindow = ScreenContext.appWindow(), appWindow.windowScene != nil
     else { return }

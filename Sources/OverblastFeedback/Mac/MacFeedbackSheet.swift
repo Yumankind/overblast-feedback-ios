@@ -43,9 +43,16 @@ final class FeedbackSheetModel: ObservableObject {
   let openedAt = Date()
   var isAboutPreviousSession: Bool { trigger == .relaunch }
 
-  init(capture: ScreenCapture, category: FeedbackCategory, message: String, trigger: FeedbackTrigger = .button) {
+  /// The categories the key takes (contract §2): one means no choice at all.
+  let categories: [(FeedbackCategory, String)]
+  let title: String
+
+  init(capture: ScreenCapture, category: FeedbackCategory?, message: String, trigger: FeedbackTrigger = .button) {
+    let config = OverblastFeedback.effectiveConfig
     self.capture = capture
-    self.category = category
+    self.category = config.category(for: category)
+    self.categories = Strings.categories(for: config)
+    self.title = Strings.title(for: config)
     self.message = message
     self.trigger = trigger
     self.asksForEmail = OverblastFeedback.reporter?.email == nil
@@ -180,18 +187,20 @@ struct FeedbackSheetView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text(Strings.title)
+      Text(model.title)
         .font(.headline)
         .accessibilityAddTraits(.isHeader)
 
-      Picker(Strings.category, selection: $model.category) {
-        ForEach(Strings.categories, id: \.0) { item in
-          Text(item.1).tag(item.0)
+      if model.categories.count > 1 {
+        Picker(Strings.category, selection: $model.category) {
+          ForEach(model.categories, id: \.0) { item in
+            Text(item.1).tag(item.0)
+          }
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .accessibilityLabel(Strings.category)
       }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .accessibilityLabel(Strings.category)
 
       message
 

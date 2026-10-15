@@ -6,6 +6,17 @@ import Foundation
 /// sentences are shown as the worker wrote them.
 enum Strings {
   static let title = "Send feedback"
+  /// The sheet's title on a key that takes problem reports only.
+  static let problemTitle = "Report a problem"
+
+  static func title(for config: FeedbackEffectiveConfig) -> String {
+    config.isProblemReportsOnly ? problemTitle : title
+  }
+
+  /// The categories the key takes, in its order, with their names.
+  static func categories(for config: FeedbackEffectiveConfig) -> [(FeedbackCategory, String)] {
+    config.categories.compactMap { c in categories.first { $0.0 == c } }
+  }
   static let cancel = "Cancel"
   static let send = "Send"
   static let done = "Done"

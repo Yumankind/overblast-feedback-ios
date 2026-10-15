@@ -15,12 +15,12 @@ import SwiftUI
 /// }
 /// ```
 public struct OverblastFeedbackButton<Label: View>: View {
-  private let category: FeedbackCategory
+  private let category: FeedbackCategory?
   private let message: String
   private let label: Label
 
   /// A button with a label of your own.
-  public init(category: FeedbackCategory = .bug, message: String = "", @ViewBuilder label: () -> Label) {
+  public init(category: FeedbackCategory? = nil, message: String = "", @ViewBuilder label: () -> Label) {
     self.category = category
     self.message = message
     self.label = label()
@@ -37,14 +37,14 @@ public struct OverblastFeedbackButton<Label: View>: View {
 
 extension OverblastFeedbackButton where Label == Text {
   /// A text button, "Report a problem" unless you name it.
-  public init(_ title: String = "Report a problem", category: FeedbackCategory = .bug, message: String = "") {
+  public init(_ title: String = "Report a problem", category: FeedbackCategory? = nil, message: String = "") {
     self.init(category: category, message: message) { Text(title) }
   }
 }
 
 extension OverblastFeedbackButton where Label == SwiftUI.Label<Text, Image> {
   /// A button with an SF Symbol, as Settings rows usually have.
-  public init(_ title: String = "Report a problem", systemImage: String, category: FeedbackCategory = .bug, message: String = "") {
+  public init(_ title: String = "Report a problem", systemImage: String, category: FeedbackCategory? = nil, message: String = "") {
     self.init(category: category, message: message) { SwiftUI.Label(title, systemImage: systemImage) }
   }
 }

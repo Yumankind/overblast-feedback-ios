@@ -50,7 +50,10 @@ extension OverblastFeedback {
   /// `trigger` is what the report says opened it: `.button` unless you say otherwise (`.shortcut`
   /// for a keyboard shortcut, `.agent` for an assistant).
   @MainActor
-  public static func present(category: FeedbackCategory = .bug, message: String = "", trigger: FeedbackTrigger = .button) {
+  ///
+  /// `category` nil opens on the key's default (its first category); one the key does not take is
+  /// replaced by that default.
+  public static func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button) {
     FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger)
   }
 
@@ -90,7 +93,7 @@ final class FeedbackPresenter {
 
   var isPresenting: Bool { model != nil }
 
-  func present(category: FeedbackCategory = .bug, message: String = "", trigger: FeedbackTrigger = .button, in window: NSWindow? = nil) {
+  func present(category: FeedbackCategory? = nil, message: String = "", trigger: FeedbackTrigger = .button, in window: NSWindow? = nil) {
     guard model == nil, OverblastFeedback.isConfigured, let appWindow = window ?? ScreenContext.appWindow(),
           // Frozen BEFORE anything of ours is on screen.
           let capture = ScreenCapture.take(of: appWindow)

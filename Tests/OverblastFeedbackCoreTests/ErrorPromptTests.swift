@@ -161,6 +161,69 @@ final class ErrorPromptTests: XCTestCase {
     XCTAssertTrue(FeedbackRemoteConfig.defaults.screenshots)
   }
 
+  // MARK: Categories (contract §2)
+
+  func testCategoriesDecodeInTheKeysOrderAndDefaultToAllFour() throws {
+    func decode(_ json: String) throws -> [FeedbackCategory] {
+      try JSONDecoder().decode(FeedbackRemoteConfig.self, from: Data(json.utf8)).categories
+    }
+    XCTAssertEqual(try decode("{}"), [.bug, .idea, .question, .other])
+    XCTAssertEqual(try decode(#"{"categories":["bug"]}"#), [.bug])
+    XCTAssertEqual(try decode(#"{"categories":["question","idea","question"]}"#), [.question, .idea])
+    XCTAssertEqual(try decode(#"{"categories":["praise","idea"]}"#), [.idea], "a kind this version does not know is left out")
+    XCTAssertEqual(try decode(#"{"categories":[]}"#), FeedbackCategory.allCases)
+    XCTAssertEqual(try decode(#"{"categories":["praise"]}"#), FeedbackCategory.allCases)
+  }
+
+  func testTheSheetsCategoryAndTheProblemOnlyKey() {
+    let bugsOnly = FeedbackEffectiveConfig.combine(FeedbackRemoteConfig(categories: [.bug]), FeedbackOptions())
+    XCTAssertTrue(bugsOnly.isProblemReportsOnly)
+    XCTAssertEqual(bugsOnly.category(for: nil), .bug)
+    XCTAssertEqual(bugsOnly.category(for: .idea), .bug)
+    let some = FeedbackEffectiveConfig.combine(FeedbackRemoteConfig(categories: [.idea, .question]), FeedbackOptions())
+    XCTAssertFalse(some.isProblemReportsOnly)
+    XCTAssertEqual(some.category(for: nil), .idea, "the first is the default")
+    XCTAssertEqual(some.category(for: .question), .question)
+    XCTAssertEqual(some.category(for: .bug), .idea)
+    let all = FeedbackEffectiveConfig.combine(.defaults, FeedbackOptions())
+    XCTAssertEqual(all.categories, FeedbackCategory.allCases)
+    XCTAssertEqual(all.category(for: nil), .bug)
+    XCTAssertNil(all.refusal(for: .other))
+    XCTAssertEqual(bugsOnly.refusal(for: .idea), .refused(status: 403, code: "category_not_accepted", message: "This app only takes problem reports.", field: "category"))
+    XCTAssertNil(bugsOnly.refusal(for: .bug))
+    XCTAssertEqual(some.refusal(for: .bug)?.message, "This app doesn't take that kind of report.")
+  }
+
+  func testAReportInACategoryTheKeyDoesNotTakeIsNotSent() async throws {
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: "obf-categories-\(UUID().uuidString)"))
+    let cached = RemoteConfigStore.Cached(config: FeedbackRemoteConfig(categories: [.bug]), etag: nil, fetchedAt: Date())
+    defaults.set(try JSONEncoder().encode(cached), forKey: RemoteConfigStore.cacheKey)
+    let pending = FileManager.default.temporaryDirectory.appendingPathComponent("obf-cat-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: pending) }
+    OverblastFeedback.configure(
+      key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
+      options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
+      session: StubProtocol.session(), store: PendingStore(directory: pending), defaults: defaults
+    )
+    XCTAssertTrue(OverblastFeedback.effectiveConfig.isProblemReportsOnly)
+    StubProtocol.reset([])
+    do {
+      try await OverblastFeedback.report(message: "a feature idea", category: .idea, logs: [])
+      XCTFail("expected the local refusal")
+    } catch let error as FeedbackError {
+      XCTAssertEqual(error, .refused(status: 403, code: "category_not_accepted", message: "This app only takes problem reports.", field: "category"))
+      XCTAssertFalse(error.keepsForLater)
+    }
+    XCTAssertTrue(StubProtocol.seen.isEmpty, "nothing was sent")
+    XCTAssertEqual(OverblastFeedback.pendingCount, 0, "and nothing kept")
+    // Put the engine back to the defaults for the other tests in this process.
+    OverblastFeedback.configure(
+      key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
+      options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
+      session: StubProtocol.session(), store: PendingStore(directory: pending), defaults: UserDefaults(suiteName: "obf-categories-\(UUID().uuidString)")
+    )
+  }
+
   func testLocalOptionsCanOnlyTurnThingsOff() {
     let on = FeedbackRemoteConfig(verification: .require, errorPrompt: .init(enabled: true), screenshots: true)
     let all = FeedbackEffectiveConfig.combine(on, FeedbackOptions())

@@ -44,10 +44,17 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
   private let trigger: FeedbackTrigger
   private var isAboutPreviousSession: Bool { trigger == .relaunch }
 
-  init(capture: ScreenCapture, appWindow: UIWindow, category: FeedbackCategory, message: String, trigger: FeedbackTrigger = .button, onFinish: @escaping () -> Void) {
+  /// The categories the key takes (contract §2): one means no choice at all.
+  private let categories: [(FeedbackCategory, String)]
+  private let sheetTitle: String
+
+  init(capture: ScreenCapture, appWindow: UIWindow, category: FeedbackCategory?, message: String, trigger: FeedbackTrigger = .button, onFinish: @escaping () -> Void) {
+    let config = OverblastFeedback.effectiveConfig
     self.capture = capture
     self.appWindow = appWindow
-    self.category = category
+    self.category = config.category(for: category)
+    self.categories = Strings.categories(for: config)
+    self.sheetTitle = Strings.title(for: config)
     self.trigger = trigger
     self.onFinish = onFinish
     self.asksForEmail = OverblastFeedback.reporter?.email == nil
@@ -62,7 +69,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    title = Strings.title
+    title = sheetTitle
     view.backgroundColor = .systemGroupedBackground
     navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in self?.cancel() })
     setSendItem()
@@ -104,7 +111,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
       stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -40),
     ])
 
-    buildCategory()
+    if categories.count > 1 { buildCategory() }
     buildMessage()
     buildElement()
     // The key's owner can switch screenshots off (contract §2.1); then none is offered.
@@ -120,14 +127,14 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
   }
 
   private func buildCategory() {
-    for (index, item) in Strings.categories.enumerated() {
+    for (index, item) in categories.enumerated() {
       categoryControl.insertSegment(withTitle: item.1, at: index, animated: false)
       if item.0 == category { categoryControl.selectedSegmentIndex = index }
     }
     categoryControl.accessibilityLabel = Strings.category
     categoryControl.addAction(UIAction { [weak self] _ in
       guard let self else { return }
-      self.category = Strings.categories[self.categoryControl.selectedSegmentIndex].0
+      self.category = self.categories[self.categoryControl.selectedSegmentIndex].0
     }, for: .valueChanged)
     stack.addArrangedSubview(categoryControl)
   }

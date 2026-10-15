@@ -41,20 +41,34 @@ public struct FeedbackRemoteConfig: Codable, Sendable, Equatable {
   public var verification: Verification
   public var errorPrompt: ErrorPrompt
   public var screenshots: Bool
+  /// The kinds of report the key accepts, in the owner's order; the first is the sheet's default.
+  /// `[.bug]` makes it a problem-report key: no category choice, and the sheet is "Report a problem".
+  public var categories: [FeedbackCategory]
 
-  public init(verification: Verification = .off, errorPrompt: ErrorPrompt = ErrorPrompt(), screenshots: Bool = true) {
+  public init(verification: Verification = .off, errorPrompt: ErrorPrompt = ErrorPrompt(), screenshots: Bool = true, categories: [FeedbackCategory] = FeedbackCategory.allCases) {
     self.verification = verification
     self.errorPrompt = errorPrompt
     self.screenshots = screenshots
+    self.categories = FeedbackRemoteConfig.cleaned(categories)
   }
 
-  enum CodingKeys: String, CodingKey { case verification, errorPrompt, screenshots }
+  enum CodingKeys: String, CodingKey { case verification, errorPrompt, screenshots, categories }
 
   public init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     verification = (try? c.decode(Verification.self, forKey: .verification)) ?? .off
     errorPrompt = (try? c.decode(ErrorPrompt.self, forKey: .errorPrompt)) ?? ErrorPrompt()
     screenshots = (try? c.decode(Bool.self, forKey: .screenshots)) ?? true
+    let raw = (try? c.decode([String].self, forKey: .categories)) ?? []
+    categories = FeedbackRemoteConfig.cleaned(raw.compactMap(FeedbackCategory.init(rawValue:)))
+  }
+
+  /// Duplicates out, order kept; a category this version does not know is left out, and nothing left
+  /// (or nothing sent) is all four, which is the default.
+  static func cleaned(_ list: [FeedbackCategory]) -> [FeedbackCategory] {
+    var seen = Set<FeedbackCategory>()
+    let out = list.filter { seen.insert($0).inserted }
+    return out.isEmpty ? FeedbackCategory.allCases : out
   }
 
   /// The defaults, before any answer.
@@ -69,13 +83,33 @@ public struct FeedbackEffectiveConfig: Sendable, Equatable {
   public var screenshots: Bool
   /// The error prompt's settings, or nil when it is off.
   public var errorPrompt: FeedbackRemoteConfig.ErrorPrompt?
+  /// The categories the key accepts, the first being the default.
+  public var categories: [FeedbackCategory] = FeedbackCategory.allCases
 
   public static func combine(_ remote: FeedbackRemoteConfig, _ options: FeedbackOptions) -> FeedbackEffectiveConfig {
     FeedbackEffectiveConfig(
       deviceRegistration: remote.verification != .off && options.device,
       screenshots: remote.screenshots && options.screenshots,
-      errorPrompt: remote.errorPrompt.enabled && options.errorPrompt && !remote.errorPrompt.on.isEmpty ? remote.errorPrompt : nil
+      errorPrompt: remote.errorPrompt.enabled && options.errorPrompt && !remote.errorPrompt.on.isEmpty ? remote.errorPrompt : nil,
+      categories: remote.categories
     )
+  }
+
+  /// A key that takes problem reports only: no category choice, "Report a problem".
+  public var isProblemReportsOnly: Bool { categories == [.bug] }
+
+  /// The category a sheet opens with: the one asked for when the key takes it, else the key's first.
+  public func category(for requested: FeedbackCategory?) -> FeedbackCategory {
+    if let requested, categories.contains(requested) { return requested }
+    return categories.first ?? .bug
+  }
+
+  /// The local refusal for a category the key does not take (the worker's 403
+  /// `category_not_accepted`, made before anything is sent).
+  public func refusal(for category: FeedbackCategory) -> FeedbackError? {
+    guard !categories.contains(category) else { return nil }
+    let message = isProblemReportsOnly ? "This app only takes problem reports." : "This app doesn't take that kind of report."
+    return .refused(status: 403, code: "category_not_accepted", message: message, field: "category")
   }
 }
 

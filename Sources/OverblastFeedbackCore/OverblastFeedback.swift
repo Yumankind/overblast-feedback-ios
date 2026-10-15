@@ -395,6 +395,9 @@ public enum OverblastFeedback {
   @discardableResult
   public static func send(_ payload: FeedbackPayload, keepForLater: Bool = true) async throws -> FeedbackReceipt {
     guard let config = Engine.shared.config else { throw FeedbackError.notStarted }
+    // A category the key does not take is refused here, as the worker would (contract §2), and not
+    // kept for later: it would be refused again.
+    if let refusal = effectiveConfig.refusal(for: payload.category) { throw refusal }
     let clean = try payload.sanitized()
     do {
       return try await config.client.send(clean)
