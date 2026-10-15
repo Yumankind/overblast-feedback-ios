@@ -24,7 +24,11 @@ enum ElementPicker {
 
   static func select(at point: CGPoint, in window: UIWindow, privateRects: [CGRect] = []) -> Selection? {
     guard window.bounds.contains(point) else { return nil }
-    let view = deepestView(at: point, in: window) ?? window
+    var view = deepestView(at: point, in: window) ?? window
+    // A view of SwiftUI's own inside the hosting view (visionOS draws a `Button` in a
+    // `_UIInheritedView`) is part of the hosting view's picture: the search below starts from the
+    // outermost SwiftUI view, so a marker beside it is still found.
+    if isSwiftUIHost(view) { view = swiftUIRoot(of: view) }
     let viewport = window.bounds.size
     let insidePrivate = PrivacyMask.isInsidePrivate(view) || privateRects.contains { $0.contains(point) }
     var steps = path(to: view, in: window)
@@ -172,6 +176,17 @@ enum ElementPicker {
     String(reflecting: type(of: view)).hasPrefix("SwiftUI.")
   }
 
+  /// The outermost of the SwiftUI views that hold `view`: the hosting view, normally.
+  static func swiftUIRoot(of view: UIView) -> UIView {
+    var root = view
+    var v = view.superview
+    while let current = v, isSwiftUIHost(current), !(current is UIWindow) {
+      root = current
+      v = current.superview
+    }
+    return root
+  }
+
   // MARK: Accessibility (SwiftUI)
 
   struct Node {
@@ -194,7 +209,7 @@ enum ElementPicker {
         // `accessibilityFrame` is in screen coordinates; for a full-screen window that is the
         // window's own space, and the conversion covers a window that is not (Stage Manager, Split
         // View).
-        let frame = window.convert(object.accessibilityFrame, from: window.screen.coordinateSpace)
+        let frame = windowFrame(ofScreenFrame: object.accessibilityFrame, in: window)
         if frame.contains(point), frame.width > 0, frame.height > 0 {
           if best == nil || frame.width * frame.height < best!.frame.width * best!.frame.height {
             best = (object, frame)
@@ -216,6 +231,27 @@ enum ElementPicker {
       label: found.object.accessibilityLabel,
       frame: found.frame
     )
+  }
+
+  /// An `accessibilityFrame` (screen coordinates) in `window`'s own space.
+  static func windowFrame(ofScreenFrame frame: CGRect, in window: UIWindow) -> CGRect {
+    #if os(visionOS)
+    // There is no `UIScreen` on visionOS. The accessibility frames are in the space
+    // `UIAccessibility.convertToScreenCoordinates` maps to, so the window's own bounds mapped the same
+    // way give the offset and the scale back.
+    let windowInScreen = UIAccessibility.convertToScreenCoordinates(window.bounds, in: window)
+    guard windowInScreen.width > 0, windowInScreen.height > 0 else { return frame }
+    let sx = window.bounds.width / windowInScreen.width
+    let sy = window.bounds.height / windowInScreen.height
+    return CGRect(
+      x: (frame.minX - windowInScreen.minX) * sx,
+      y: (frame.minY - windowInScreen.minY) * sy,
+      width: frame.width * sx,
+      height: frame.height * sy
+    )
+    #else
+    return window.convert(frame, from: window.screen.coordinateSpace)
+    #endif
   }
 
   static func children(of object: NSObject) -> [NSObject] {

@@ -70,6 +70,9 @@ public final class OverblastNetworkRecorder: URLProtocol, @unchecked Sendable {
       status: status,
       ms: ms
     ))
+    // A 5xx or no answer from one of the app's own hosts can set off the error prompt (§3.6). The
+    // report door is never recorded at all (`canInit`), so it never counts.
+    ErrorPromptCenter.shared.noteRequest(host: url.host, status: status)
   }
 
   /// One session and one delegate for every recorded request, mapping tasks back to the protocol

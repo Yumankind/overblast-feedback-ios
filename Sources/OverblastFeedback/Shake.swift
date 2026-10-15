@@ -1,8 +1,9 @@
-#if canImport(UIKit)
+#if canImport(UIKit) && !os(visionOS)
 import ObjectiveC
 import UIKit
 
-/// Shake-to-report without asking the app to subclass anything.
+/// Shake-to-report without asking the app to subclass anything. Not compiled for visionOS, which
+/// delivers no motion events to an app; `start` installs it only where `DeviceInfo.deliversShake`.
 ///
 /// HOW: `-[UIWindow motionEnded:withEvent:]` is replaced, once, by an implementation that calls the
 /// original first and then opens the sheet on a shake. UIWindow normally inherits that method from
@@ -55,7 +56,7 @@ enum ShakeDetector {
     let now = Date()
     guard now.timeIntervalSince(lastShake) > debounce else { return }
     lastShake = now
-    FeedbackPresenter.shared.present()
+    FeedbackPresenter.shared.present(trigger: .shake)
   }
 }
 #endif

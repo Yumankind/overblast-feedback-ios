@@ -3,9 +3,13 @@
 import UIKit
 
 extension OverblastFeedback {
-  /// Sets the library up and, unless `options.shakeToReport` is false, opens the report sheet when
-  /// the device is shaken. Call it once, early (`application(_:didFinishLaunchingWithOptions:)` or
-  /// your `App`'s `init`).
+  /// Sets the library up and, on an iPhone or iPad unless `options.shakeToReport` is false, opens
+  /// the report sheet when the device is shaken. Call it once, early
+  /// (`application(_:didFinishLaunchingWithOptions:)` or your `App`'s `init`).
+  ///
+  /// On visionOS (and an iPhone app running on a Mac or on Apple Vision Pro) there is no shake to
+  /// hear: nothing is installed, and the sheet opens from `present()`, typically behind a Settings
+  /// button (`OverblastFeedbackButton`).
   ///
   /// - Parameters:
   ///   - key: the workspace's feedback key, `obfk_...`, from the console's Feedback keys page. It is
@@ -24,24 +28,37 @@ extension OverblastFeedback {
       await MainActor.run { ScreenContext.current() }
     }
     isShakeEnabled = options.shakeToReport
+    SessionLifecycle.start(options: options)
+    ErrorPromptUI.start()
   }
 
   /// Shake-to-report, switchable at run time. Setting it to true installs the shake hook if `start`
-  /// did not.
+  /// did not. Always false where `isShakeAvailable` is false, and setting it there does nothing.
   @MainActor
   public static var isShakeEnabled: Bool {
-    get { ShakeDetector.isEnabled }
+    get {
+      #if os(visionOS)
+      return false
+      #else
+      return ShakeDetector.isEnabled
+      #endif
+    }
     set {
+      #if !os(visionOS)
+      guard isShakeAvailable else { return }
       ShakeDetector.isEnabled = newValue
       if newValue { ShakeDetector.install() }
+      #endif
     }
   }
 
   /// Opens the report sheet, from a button, a menu item or a debug gesture of your own. Does nothing
-  /// while a sheet is already open or before `start`.
+  /// while a sheet is already open or before `start`. `trigger` is what the report says opened it:
+  /// `.button` unless you say otherwise (`.shortcut` for a keyboard shortcut, `.agent` for an
+  /// assistant).
   @MainActor
-  public static func present(category: FeedbackCategory = .bug, message: String = "") {
-    FeedbackPresenter.shared.present(category: category, message: message)
+  public static func present(category: FeedbackCategory = .bug, message: String = "", trigger: FeedbackTrigger = .button) {
+    FeedbackPresenter.shared.present(category: category, message: message, trigger: trigger)
   }
 
   /// True while the report sheet is on screen.
@@ -68,7 +85,7 @@ extension OverblastFeedback {
 
 /// This library's own window, above the app's, so the sheet never changes the app's view
 /// controller hierarchy and the element picker can search that hierarchy as the person left it.
-final class FeedbackOverlayWindow: UIWindow {}
+class FeedbackOverlayWindow: UIWindow {}
 
 @MainActor
 final class FeedbackPresenter {
@@ -79,14 +96,38 @@ final class FeedbackPresenter {
 
   var isPresenting: Bool { overlay != nil }
 
-  func present(category: FeedbackCategory = .bug, message: String = "") {
+  func present(category: FeedbackCategory = .bug, message: String = "", trigger: FeedbackTrigger = .button) {
     guard overlay == nil, OverblastFeedback.isConfigured,
-          let appWindow = ScreenContext.appWindow(), let scene = appWindow.windowScene
+          let appWindow = ScreenContext.appWindow(), appWindow.windowScene != nil
     else { return }
 
     // Frozen BEFORE anything of ours is on screen.
     let capture = ScreenCapture.take(of: appWindow)
+    guard let root = makeOverlay(over: appWindow) else { return }
 
+    let sheet = FeedbackSheetController(capture: capture, appWindow: appWindow, category: category, message: message, trigger: trigger) { [weak self] in
+      self?.dismiss()
+    }
+    let nav = UINavigationController(rootViewController: sheet)
+    #if os(visionOS)
+    // A form sheet is visionOS's own modal: a smaller glass panel in front of the window, which
+    // stays visible behind it. visionOS has no detents and no grabber.
+    nav.modalPresentationStyle = .formSheet
+    nav.presentationController?.delegate = sheet
+    #else
+    nav.modalPresentationStyle = .pageSheet
+    nav.presentationController?.delegate = sheet
+    if let sheetController = nav.sheetPresentationController {
+      sheetController.detents = [.large()]
+      sheetController.prefersGrabberVisible = true
+    }
+    #endif
+    root.present(nav, animated: true)
+  }
+
+  /// This library's own window above the app's, with a clear root to present from.
+  private func makeOverlay(over appWindow: UIWindow) -> UIViewController? {
+    guard let scene = appWindow.windowScene else { return nil }
     let window = FeedbackOverlayWindow(windowScene: scene)
     window.frame = appWindow.frame
     window.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.alert.rawValue + 1)
@@ -98,18 +139,26 @@ final class FeedbackPresenter {
     window.makeKeyAndVisible()
     overlay = window
     self.appWindow = appWindow
+    return root
+  }
 
-    let sheet = FeedbackSheetController(capture: capture, appWindow: appWindow, category: category, message: message) { [weak self] in
-      self?.dismiss()
-    }
-    let nav = UINavigationController(rootViewController: sheet)
-    nav.modalPresentationStyle = .pageSheet
-    nav.presentationController?.delegate = sheet
-    if let sheetController = nav.sheetPresentationController {
-      sheetController.detents = [.large()]
-      sheetController.prefersGrabberVisible = true
-    }
-    root.present(nav, animated: true)
+  /// "The app closed unexpectedly. Send a report?", once, from this library's own window. Send opens
+  /// the sheet about the previous session; Not now forgets it.
+  func offerCrashReport() {
+    guard overlay == nil, OverblastFeedback.isConfigured, let appWindow = ScreenContext.appWindow(),
+          let root = makeOverlay(over: appWindow)
+    else { return }
+    let alert = UIAlertController(title: Strings.crashOffer, message: nil, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: Strings.crashOfferLater, style: .cancel) { [weak self] _ in
+      OverblastFeedback.forgetPreviousSession()
+      self?.tearDown()
+    })
+    alert.addAction(UIAlertAction(title: Strings.crashOfferSend, style: .default) { [weak self] _ in
+      self?.tearDown()
+      self?.present(category: .bug, message: "", trigger: .relaunch)
+    })
+    alert.preferredAction = alert.actions.last
+    root.present(alert, animated: true)
   }
 
   func dismiss() {
@@ -129,5 +178,14 @@ final class FeedbackPresenter {
     appWindow?.makeKey()
     appWindow = nil
   }
+}
+/// The offer after an unexpected end, on iOS, iPadOS and visionOS.
+@MainActor
+enum CrashOffer {
+  static func canShow() -> Bool {
+    UIApplication.shared.applicationState == .active && ScreenContext.appWindow() != nil && !FeedbackPresenter.shared.isPresenting
+  }
+
+  static func show() { FeedbackPresenter.shared.offerCrashReport() }
 }
 #endif

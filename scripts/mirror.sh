@@ -5,7 +5,7 @@
 # and the feedback-reports contract both halves are held to, so a change to either is one
 # commit and one review. The mirror is the public face of the same code, and it has to be a
 # repository of its own because Swift Package Manager resolves a dependency BY URL AND TAG: an app
-# declares `.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.1.0")`, and
+# declares `.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.0")`, and
 # what it gets is a checkout of that repository's root with `Package.swift` at the top.
 #
 # `git subtree split` rewrites this package's commits with the package directory as the root,
@@ -13,7 +13,7 @@
 # fast-forward of the last one. `MIRROR_REMOTE` and `MIRROR_BRANCH` override the destination.
 #
 #   scripts/mirror.sh              push main
-#   scripts/mirror.sh v0.1.0       push main, then tag that exact commit and push the tag
+#   scripts/mirror.sh v0.2.0       push main, then tag that exact commit and push the tag
 #
 # THE TAG IS WHAT AN APP RESOLVES, so it is pushed last and only after the branch is up: a tag that
 # points at a commit the mirror does not have yet is a dependency nobody can fetch.

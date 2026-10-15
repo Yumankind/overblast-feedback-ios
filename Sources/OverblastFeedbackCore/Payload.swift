@@ -80,6 +80,11 @@ public struct FeedbackContext: Codable, Sendable, Equatable {
   public var sdk: FeedbackSDK?
   public var deviceId: String?
   public var extra: [String: String]?
+  /// Unix milliseconds when the reporter opened the report: the sheet appearing, or `report()` being
+  /// called (contract §3.4). The worker reads the logs up to here.
+  public var openedAt: Int64?
+  /// What opened it.
+  public var trigger: FeedbackTrigger?
 
   public init(
     platform: String = "ios",
@@ -97,7 +102,9 @@ public struct FeedbackContext: Codable, Sendable, Equatable {
     userAgent: String? = nil,
     sdk: FeedbackSDK? = nil,
     deviceId: String? = nil,
-    extra: [String: String]? = nil
+    extra: [String: String]? = nil,
+    openedAt: Int64? = nil,
+    trigger: FeedbackTrigger? = nil
   ) {
     self.platform = platform
     self.url = url
@@ -115,6 +122,50 @@ public struct FeedbackContext: Codable, Sendable, Equatable {
     self.sdk = sdk
     self.deviceId = deviceId
     self.extra = extra
+    self.openedAt = openedAt
+    self.trigger = trigger
+  }
+}
+
+/// What opened the report (contract §3.1).
+public enum FeedbackTrigger: String, Codable, Sendable, CaseIterable {
+  case shake, button, shortcut, agent, api
+  /// The offer made at the launch after the app closed unexpectedly.
+  case relaunch
+  /// The "Something may have gone wrong" prompt (contract §3.6).
+  case errorPrompt = "error_prompt"
+}
+
+/// How the PREVIOUS session ended, when it ended unexpectedly (contract §3.4).
+public struct FeedbackCrash: Codable, Sendable, Equatable {
+  public enum Kind: String, Codable, Sendable, CaseIterable {
+    case crash, exception, oom, killed, unknown
+  }
+
+  public enum Source: String, Codable, Sendable, CaseIterable {
+    /// MetricKit's `MXCrashDiagnostic`, delivered at a later launch.
+    case metrickit
+    /// Android's exit reasons; never sent from this library.
+    case exitInfo = "exit_info"
+    /// This library's uncaught-exception handler.
+    case handler
+    /// Only the session marker: the session never closed and nothing says why.
+    case marker
+  }
+
+  public var kind: Kind
+  /// Unix milliseconds, when known.
+  public var at: Int64?
+  public var message: String?
+  public var stack: String?
+  public var source: Source
+
+  public init(kind: Kind, at: Int64? = nil, message: String? = nil, stack: String? = nil, source: Source) {
+    self.kind = kind
+    self.at = at
+    self.message = message
+    self.stack = stack
+    self.source = source
   }
 }
 
@@ -197,12 +248,51 @@ public struct FeedbackLogEntry: Codable, Sendable, Equatable {
   public var level: FeedbackLogLevel
   public var msg: String
   public var src: String?
+  /// How many times this line was logged in a row, when more than once (contract §3.5). `repeat` on
+  /// the wire.
+  public var repeatCount: Int?
+  /// Unix milliseconds of the last repeat, with `repeatCount`.
+  public var last: Int64?
 
-  public init(t: Int64, level: FeedbackLogLevel, msg: String, src: String? = nil) {
+  enum CodingKeys: String, CodingKey {
+    case t, level, msg, src
+    case repeatCount = "repeat"
+    case last
+  }
+
+  public init(t: Int64, level: FeedbackLogLevel, msg: String, src: String? = nil, repeatCount: Int? = nil, last: Int64? = nil) {
     self.t = t
     self.level = level
     self.msg = msg
     self.src = src
+    self.repeatCount = repeatCount
+    self.last = last
+  }
+}
+
+/// The whole log as a file (contract §3.5): NDJSON, one entry per line, oldest first, gzip.
+public struct FeedbackLogFile: Codable, Sendable, Equatable {
+  public var contentType: String
+  /// `gzip` or `identity`.
+  public var encoding: String
+  public var base64: String
+  public var lines: Int
+  public var from: Int64
+  public var to: Int64
+
+  public init(contentType: String = "application/x-ndjson", encoding: String, base64: String, lines: Int, from: Int64, to: Int64) {
+    self.contentType = contentType
+    self.encoding = encoding
+    self.base64 = base64
+    self.lines = lines
+    self.from = from
+    self.to = to
+  }
+
+  /// The size of the file as sent, before base64.
+  public var decodedByteCount: Int {
+    let padding = base64.hasSuffix("==") ? 2 : (base64.hasSuffix("=") ? 1 : 0)
+    return max(0, base64.utf8.count / 4 * 3 - padding)
   }
 }
 
@@ -234,7 +324,11 @@ public struct FeedbackPayload: Codable, Sendable, Equatable {
   public var element: FeedbackElement?
   public var screenshot: FeedbackScreenshot?
   public var logs: [FeedbackLogEntry]?
+  /// Everything the log buffer held, as a compressed file (contract §3.5).
+  public var logFile: FeedbackLogFile?
   public var network: [FeedbackNetworkEntry]?
+  /// The previous session's unexpected end, on a report made at the next launch.
+  public var crash: FeedbackCrash?
 
   public init(
     message: String,
@@ -244,7 +338,9 @@ public struct FeedbackPayload: Codable, Sendable, Equatable {
     element: FeedbackElement? = nil,
     screenshot: FeedbackScreenshot? = nil,
     logs: [FeedbackLogEntry]? = nil,
-    network: [FeedbackNetworkEntry]? = nil
+    network: [FeedbackNetworkEntry]? = nil,
+    crash: FeedbackCrash? = nil,
+    logFile: FeedbackLogFile? = nil
   ) {
     self.message = message
     self.category = category
@@ -254,6 +350,8 @@ public struct FeedbackPayload: Codable, Sendable, Equatable {
     self.screenshot = screenshot
     self.logs = logs
     self.network = network
+    self.crash = crash
+    self.logFile = logFile
   }
 
   /// The encoder the client sends with. Slashes are not escaped, so a URL in a log line costs what

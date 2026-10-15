@@ -3,7 +3,7 @@ import Foundation
 /// The install's random id and the facts about the device that go in `context`.
 public enum DeviceInfo {
   public static let sdkName = "overblast-feedback-ios"
-  public static let sdkVersion = "0.1.0"
+  public static let sdkVersion = "0.2.0"
 
   /// The `UserDefaults` suite the device id lives in. A suite of its own, so an app that clears its
   /// standard defaults on sign-out does not make every report look like a new device.
@@ -46,21 +46,66 @@ public enum DeviceInfo {
     }
   }
 
-  public static var osName: String {
+  /// Where this process is running, which is not always what it was compiled for: an iPhone or iPad
+  /// app also runs on a Mac with Apple silicon and on Apple Vision Pro.
+  public enum Runtime: String, Sendable, CaseIterable {
+    /// An iOS build on an iPhone, iPad or iPod touch, or on their simulators.
+    case iOS
+    /// A Mac Catalyst build.
+    case macCatalyst
+    /// An unmodified iPhone or iPad app on a Mac with Apple silicon ("Designed for iPad").
+    case iOSAppOnMac
+    /// An unmodified iPhone or iPad app on Apple Vision Pro ("Designed for iPad" on visionOS).
+    case iOSAppOnVision
+    /// A native visionOS build.
+    case visionOS
+    /// A native macOS (AppKit) build.
+    case macOS
+  }
+
+  public static var runtime: Runtime {
     #if os(iOS)
     #if targetEnvironment(macCatalyst)
-    return "macOS"
+    return .macCatalyst
     #else
-    return ProcessInfo.processInfo.isiOSAppOnMac ? "macOS" : "iOS"
+    if ProcessInfo.processInfo.isiOSAppOnMac { return .iOSAppOnMac }
+    if isiOSAppOnVision { return .iOSAppOnVision }
+    return .iOS
     #endif
     #elseif os(visionOS)
-    return "visionOS"
-    #elseif os(macOS)
-    return "macOS"
+    return .visionOS
     #else
-    return "unknown"
+    return .macOS
     #endif
   }
+
+  /// `ProcessInfo.isiOSAppOnVision` arrived with the iOS 26.1 SDK. Asked by selector rather than by
+  /// name, so the package still compiles against an older SDK and answers false on an older system.
+  static var isiOSAppOnVision: Bool {
+    let info = ProcessInfo.processInfo
+    guard info.responds(to: NSSelectorFromString("isiOSAppOnVision")) else { return false }
+    return (info.value(forKey: "isiOSAppOnVision") as? Bool) ?? false
+  }
+
+  /// `context.os`: `iOS`, `iPadOS`, `visionOS` or `macOS`.
+  public static var osName: String { osName(runtime: runtime, model: modelIdentifier()) }
+
+  /// The system's own name for where the app runs. An iPad says iPadOS, because that is what its
+  /// owner calls it and what a team filters by; an iPhone app on a Mac or on Apple Vision Pro says the
+  /// system it is actually on. `context.platform` stays `ios` in every case (contract §3.1).
+  public static func osName(runtime: Runtime, model: String) -> String {
+    switch runtime {
+    case .iOS: return model.hasPrefix("iPad") ? "iPadOS" : "iOS"
+    case .macCatalyst, .iOSAppOnMac, .macOS: return "macOS"
+    case .iOSAppOnVision, .visionOS: return "visionOS"
+    }
+  }
+
+  /// True only where shaking the device reaches the app: an iPhone or iPad. A Mac has no motion
+  /// events, and Apple Vision Pro delivers none to apps, so there the sheet opens from a button.
+  public static var deliversShake: Bool { deliversShake(on: runtime) }
+
+  public static func deliversShake(on runtime: Runtime) -> Bool { runtime == .iOS }
 
   public static var osVersion: String {
     let v = ProcessInfo.processInfo.operatingSystemVersion

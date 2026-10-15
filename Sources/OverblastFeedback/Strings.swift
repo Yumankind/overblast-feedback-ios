@@ -1,7 +1,8 @@
-#if canImport(UIKit)
+#if canImport(UIKit) || os(macOS)
+import OverblastFeedbackCore
 import Foundation
 
-/// Every sentence the sheet shows, in one place. English only in 0.1; the worker's own refusal
+/// Every sentence the sheet shows, in one place. English only for now; the worker's own refusal
 /// sentences are shown as the worker wrote them.
 enum Strings {
   static let title = "Send feedback"
@@ -23,9 +24,25 @@ enum Strings {
   static let sending = "Sending…"
   static let sent = "Sent. Thank you."
   static let savedForLater = "Saved. It will be sent the next time the app opens."
+  #if os(macOS)
+  static let pointerHint = "Click the part of the window that's wrong"
+  static let pointerImage = "Frozen picture of the window"
+  static let pointerImageHint = "Click the part of the window that is wrong."
+  #else
   static let pointerHint = "Tap the part of the screen that's wrong"
   static let pointerImage = "Frozen screenshot"
   static let pointerImageHint = "Touch the part of the screen that is wrong."
+  #endif
+  static let reportProblem = "Report a problem"
+  static let crashOffer = "The app closed unexpectedly. Send a report?"
+  static let crashOfferSend = "Send report"
+  static let crashOfferLater = "Not now"
+  static let crashPlaceholder = "What were you doing when it closed?"
+  static let promptText = "Something may have gone wrong. Tell us?"
+  static let promptReport = "Report"
+  static let promptClose = "Close"
+  static let clearSelectionHint = "Clear the selected element"
+  static let removeScreenshotHint = "Remove the screenshot"
 
   static func selected(_ element: FeedbackElement) -> String {
     if let label = element.label, !label.isEmpty { return "\(element.type) “\(label)”" }
@@ -34,11 +51,12 @@ enum Strings {
 
   /// "Will be sent: your message, the selected element, the screenshot, logs from this session and
   /// device details."
-  static func willSend(element: Bool, screenshot: Bool, logs: Bool, email: Bool) -> String {
+  static func willSend(element: Bool, screenshot: Bool, logs: Bool, email: Bool, crash: Bool = false) -> String {
     var parts = ["your message"]
     if element { parts.append("the selected element") }
     if screenshot { parts.append("the screenshot") }
-    if logs { parts.append("logs from this session") }
+    if crash { parts.append("how the app closed") }
+    if logs { parts.append(crash ? "logs from before it closed" : "logs from this session") }
     if email { parts.append("your email address") }
     parts.append("device and app details")
     let list = parts.count > 1 ? parts.dropLast().joined(separator: ", ") + " and " + parts.last! : parts[0]

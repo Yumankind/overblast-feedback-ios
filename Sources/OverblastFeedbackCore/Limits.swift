@@ -26,7 +26,8 @@ public enum FeedbackLimits {
   public static let elementId = 120
   public static let elementLabel = 120
 
-  public static let screenshotBytes = 5 * 1024 * 1024
+  /// 5 MB decoded, decimal (contract §3.5's sizes are decimal decoded bytes).
+  public static let screenshotBytes = 5_000_000
   public static let screenshotTypes: Set<String> = ["image/png", "image/jpeg", "image/webp"]
 
   public static let logEntries = 500
@@ -40,8 +41,11 @@ public enum FeedbackLimits {
   public static let networkURL = 500
   public static let networkMethod = 16
 
-  /// The whole body.
-  public static let bodyBytes = 8 * 1024 * 1024
+  public static let crashMessage = 2000
+  public static let crashStack = 16_000
+
+  /// The whole body, 8 MB decimal.
+  public static let bodyBytes = 8_000_000
 }
 
 /// Cuts strings to a limit without splitting a character.
@@ -149,7 +153,18 @@ extension FeedbackPayload {
 
     out.logs = Self.capLogs(logs ?? [])
     out.network = Self.capNetwork(network ?? [])
+    out.crash = crash.map(Self.capCrash)
     return out
+  }
+
+  /// The crash's message and stack redacted like logs (an exception's reason can carry a token) and
+  /// cut to 2,000 and 16,000; a time that is not a time is left out.
+  static func capCrash(_ crash: FeedbackCrash) -> FeedbackCrash {
+    var c = crash
+    c.message = FeedbackText.optional(c.message.map(Redactor.redact), FeedbackLimits.crashMessage)
+    c.stack = FeedbackText.optional(c.stack.map(Redactor.redact), FeedbackLimits.crashStack)
+    if let at = c.at, at <= 0 { c.at = nil }
+    return c
   }
 
   /// Newest 500, each line redacted and cut, then the oldest dropped until the encoded array is
@@ -208,6 +223,7 @@ extension FeedbackContext {
     c.timeZone = FeedbackText.optional(timeZone, FeedbackLimits.shortField, ellipsis: false)
     c.userAgent = FeedbackText.optional(userAgent, FeedbackLimits.userAgent)
     if let id = deviceId, !FeedbackText.isValidDeviceId(id) { c.deviceId = nil }
+    if let openedAt, openedAt <= 0 { c.openedAt = nil }
     if let vp = viewport, !(vp.w > 0 && vp.h > 0) { c.viewport = nil }
     if let extra, !extra.isEmpty {
       // At most 20 keys, chosen by sorted key so the same input always keeps the same ones.

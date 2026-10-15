@@ -36,11 +36,19 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
   private let statusLabel = UILabel()
 
   private let asksForEmail: Bool
+  /// The unified log is read up to here: what UIKit logs about this sheet is not the app's.
+  private let openedAt = Date()
 
-  init(capture: ScreenCapture, appWindow: UIWindow, category: FeedbackCategory, message: String, onFinish: @escaping () -> Void) {
+  /// What opened the sheet; `.relaunch` makes it a report about the previous session, which carries
+  /// that session's saved logs and how it ended instead of this session's.
+  private let trigger: FeedbackTrigger
+  private var isAboutPreviousSession: Bool { trigger == .relaunch }
+
+  init(capture: ScreenCapture, appWindow: UIWindow, category: FeedbackCategory, message: String, trigger: FeedbackTrigger = .button, onFinish: @escaping () -> Void) {
     self.capture = capture
     self.appWindow = appWindow
     self.category = category
+    self.trigger = trigger
     self.onFinish = onFinish
     self.asksForEmail = OverblastFeedback.reporter?.email == nil
     super.init(nibName: nil, bundle: nil)
@@ -59,11 +67,19 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in self?.cancel() })
     setSendItem()
 
-    logsTask = Task.detached(priority: .utility) { await OverblastFeedback.collectLogs() }
+    let openedAt = self.openedAt
+    if isAboutPreviousSession {
+      let saved = OverblastFeedback.previousSession?.logs ?? []
+      logsTask = Task { saved }
+    } else {
+      logsTask = Task.detached(priority: .utility) { await OverblastFeedback.collectLogs(until: openedAt) }
+    }
 
     scroll.translatesAutoresizingMaskIntoConstraints = false
     scroll.alwaysBounceVertical = true
+    #if !os(visionOS)
     scroll.keyboardDismissMode = .interactive
+    #endif
     view.addSubview(scroll)
 
     stack.axis = .vertical
@@ -72,8 +88,12 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     scroll.addSubview(stack)
 
     NSLayoutConstraint.activate([
-      scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      // Horizontally inside the safe area: on a display with a system bar down one side (iPhone
+      // Duo's closed display, landscape with the sensor housing) UIKit moves the clock and the bar
+      // buttons into that column, and the sheet's content must not run under them. Vertically the
+      // scroll view keeps the full height and adjusts its own insets.
+      scroll.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+      scroll.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
       scroll.topAnchor.constraint(equalTo: view.topAnchor),
       scroll.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
 
@@ -87,7 +107,8 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     buildCategory()
     buildMessage()
     buildElement()
-    buildScreenshot()
+    // The key's owner can switch screenshots off (contract §2.1); then none is offered.
+    if OverblastFeedback.effectiveConfig.screenshots { buildScreenshot() }
     if asksForEmail { buildEmail() }
     buildFooter()
     refresh()
@@ -124,7 +145,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     messageView.accessibilityHint = Strings.messagePlaceholder
     messageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
 
-    placeholder.text = Strings.messagePlaceholder
+    placeholder.text = isAboutPreviousSession ? Strings.crashPlaceholder : Strings.messagePlaceholder
     placeholder.font = .preferredFont(forTextStyle: .body)
     placeholder.adjustsFontForContentSizeCategory = true
     placeholder.textColor = .placeholderText
@@ -163,7 +184,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     clearButton.setTitle(Strings.clearSelection, for: .normal)
     clearButton.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
     clearButton.titleLabel?.adjustsFontForContentSizeCategory = true
-    clearButton.accessibilityLabel = "Clear the selected element"
+    clearButton.accessibilityLabel = Strings.clearSelectionHint
     clearButton.addAction(UIAction { [weak self] _ in
       self?.selection = nil
       self?.refresh()
@@ -209,7 +230,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     thumbnail.heightAnchor.constraint(equalToConstant: 200).isActive = true
 
     removeButton.setTitle(Strings.remove, for: .normal)
-    removeButton.accessibilityLabel = "Remove the screenshot"
+    removeButton.accessibilityLabel = Strings.removeScreenshotHint
     removeButton.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
     removeButton.titleLabel?.adjustsFontForContentSizeCategory = true
     removeButton.addAction(UIAction { [weak self] _ in
@@ -310,7 +331,8 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
       element: selection != nil,
       screenshot: includeScreenshot,
       logs: OverblastFeedback.options.includeLogs,
-      email: typedEmail != nil || OverblastFeedback.reporter?.email != nil
+      email: typedEmail != nil || OverblastFeedback.reporter?.email != nil,
+      crash: isAboutPreviousSession
     )
 
     [categoryControl, pointButton, clearButton, screenshotSwitch, removeButton, emailField].forEach { $0.isEnabled = !isSending }
@@ -361,6 +383,8 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
 
   private func cancel() {
     logsTask?.cancel()
+    // The offer is made once: cancelling the report about the previous session is an answer too.
+    if isAboutPreviousSession { OverblastFeedback.forgetPreviousSession() }
     onFinish()
   }
 
@@ -378,6 +402,10 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     let message = messageView.text ?? ""
     let category = self.category
     let logsTask = self.logsTask
+    let trigger = self.trigger
+    let openedAt = self.openedAt
+    // Decided at Send, so a MetricKit diagnostic that arrived while the person typed is in it.
+    let crash = isAboutPreviousSession ? OverblastFeedback.previousSessionCrash : nil
 
     Task { @MainActor [weak self] in
       let logs = await logsTask?.value
@@ -388,7 +416,10 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
           reporter: reporter,
           element: element,
           screenshot: screenshot,
-          logs: logs ?? []
+          logs: logs ?? [],
+          trigger: trigger,
+          openedAt: openedAt,
+          crash: crash
         )
         self?.finishSending(text: Strings.sent, error: false, close: true)
       } catch let error as FeedbackError {
@@ -406,6 +437,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
   }
 
   private func finishSending(text: String, error: Bool, close: Bool) {
+    if close, isAboutPreviousSession { OverblastFeedback.forgetPreviousSession() }
     isSending = false
     isModalInPresentation = !close
     setSendItem()
@@ -425,6 +457,7 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
 
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
     logsTask?.cancel()
+    if isAboutPreviousSession { OverblastFeedback.forgetPreviousSession() }
     FeedbackPresenter.shared.tearDown()
   }
 }

@@ -129,6 +129,7 @@ final class UIKitTests: XCTestCase {
     XCTAssertFalse(try XCTUnwrap(ScreenshotRenderer.screenshot(from: capture, element: nil)).highlighted)
   }
 
+  #if !os(visionOS)
   func testTheShakeHookIsUIWindowsAloneAndInstallsOnce() {
     let selector = #selector(UIResponder.motionEnded(_:with:))
     let responderIMP = method_getImplementation(class_getInstanceMethod(UIResponder.self, selector)!)
@@ -142,6 +143,7 @@ final class UIKitTests: XCTestCase {
     ShakeDetector.isEnabled = false
     window.motionEnded(.motionShake, with: nil)
   }
+  #endif
 
   func testTopViewControllerWalksPresentedAndNavigation() {
     let inner = CartViewController()
@@ -199,6 +201,43 @@ final class UIKitTests: XCTestCase {
     let s = try XCTUnwrap(ElementPicker.select(at: CGPoint(x: 200, y: 280), in: window, privateRects: rects))
     XCTAssertFalse(s.element.path.contains { $0.contains("Marker") }, "\(s.element.path)")
     XCTAssertNil(s.element.label)
+  }
+
+  /// A system bar down one side (iPhone Duo's closed display, a phone in landscape) is a sideways
+  /// safe-area inset; the sheet's content stays inside it instead of running under the clock and
+  /// the bar buttons UIKit moves there.
+  func testTheSheetStaysInsideASidewaysSafeArea() throws {
+    #if os(visionOS)
+    // The package's xctest host on the visionOS simulator is not a visionOS app (no `.vision`
+    // idiom), and UIKit cannot even make the sheet's UISwitch there ("Nil UISwitch visual
+    // element"). The rule under test is the iPhone's; visionOS shows the sheet as a form sheet.
+    throw XCTSkip("UISwitch cannot be drawn in the visionOS xctest host")
+    #else
+    let sheet = FeedbackSheetController(capture: ScreenCapture.take(of: window), appWindow: window, category: .bug, message: "", onFinish: {})
+    // A window in a scene where there is one: visionOS's controls (the screenshot switch) draw only
+    // in a window that has the scene's traits.
+    let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+    let host = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: .zero)
+    host.frame = CGRect(x: 0, y: 0, width: 400, height: 800)
+    host.rootViewController = UINavigationController(rootViewController: sheet)
+    host.isHidden = false
+    defer { host.isHidden = true }
+    sheet.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 60)
+    host.layoutIfNeeded()
+    sheet.view.layoutIfNeeded()
+    func find<T: UIView>(_ type: T.Type, in view: UIView) -> T? {
+      if let match = view as? T { return match }
+      for sub in view.subviews { if let found = find(type, in: sub) { return found } }
+      return nil
+    }
+    let category = try XCTUnwrap(find(UISegmentedControl.self, in: sheet.view))
+    let frame = category.convert(category.bounds, to: sheet.view)
+    let safe = sheet.view.bounds.inset(by: sheet.view.safeAreaInsets)
+    XCTAssertGreaterThanOrEqual(frame.minX, safe.minX, "\(frame) in \(safe)")
+    XCTAssertLessThanOrEqual(frame.maxX, safe.maxX, "\(frame) in \(safe)")
+    let message = try XCTUnwrap(find(UITextView.self, in: sheet.view))
+    XCTAssertLessThanOrEqual(message.convert(message.bounds, to: sheet.view).maxX, safe.maxX)
+    #endif
   }
 
   private func color(of image: UIImage, at point: CGPoint) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
