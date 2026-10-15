@@ -38,12 +38,34 @@ final class ErrorPromptTests: XCTestCase {
   func testItWaitsForTheKeyboardAndGivesUpAfterThirtySeconds() {
     var g = gate()
     g.noteError(.exception, at: at(20))
-    let typing = ErrorPromptGate.Conditions(isTextInputActive: true)
+    let typing = ErrorPromptGate.Conditions(isKeyboardUp: true)
     XCTAssertEqual(g.decide(at: at(21), typing), .wait(until: at(21.5)))
     XCTAssertEqual(g.decide(at: at(49), typing), .wait(until: at(49.5)))
     XCTAssertEqual(g.decide(at: at(50.1), typing), .idle)
     XCTAssertNil(g.pendingSince)
     XCTAssertEqual(g.decide(at: at(51), calm), .idle, "given up: nothing left to show")
+  }
+
+  func testOnlyTypingHoldsItBackNotFocus() {
+    var g = gate()
+    g.noteError(.exception, at: at(20))
+    // Text changed two seconds ago: still typing.
+    XCTAssertEqual(g.decide(at: at(21), .init(lastTextEditAt: at(19))), .wait(until: at(21.5)))
+    // Five seconds after the last change the person has stopped, even if the field keeps focus
+    // (focus alone is not in the conditions at all).
+    XCTAssertEqual(g.decide(at: at(24.1), .init(lastTextEditAt: at(19))), .show)
+    XCTAssertTrue(ErrorPromptGate.Conditions(lastTextEditAt: at(0)).isTyping(at: at(4.9)))
+    XCTAssertFalse(ErrorPromptGate.Conditions(lastTextEditAt: at(0)).isTyping(at: at(5)))
+    XCTAssertFalse(ErrorPromptGate.Conditions().isTyping(at: at(5)))
+  }
+
+  func testTypingThatNeverStopsGivesUpAfterThirtySeconds() {
+    var g = gate()
+    g.noteError(.exception, at: at(20))
+    for second in stride(from: 21.0, through: 50.0, by: 1) {
+      XCTAssertNotEqual(g.decide(at: at(second), .init(lastTextEditAt: at(second - 1))), .show)
+    }
+    XCTAssertEqual(g.decide(at: at(50.5), .init(lastTextEditAt: at(50))), .idle)
   }
 
   func testNotOverTheSheetAnAlertOrTheCrashOfferNorInTheBackground() {

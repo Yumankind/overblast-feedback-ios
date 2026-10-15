@@ -330,12 +330,14 @@ What counts, of the kinds the key lists:
   are seen only through the network recorder (`recordNetwork()`), and requests to the feedback
   service itself never count.
 
-When it may appear: at least ten seconds after `start`; not while a text field has focus or the
-keyboard is up (it waits up to 30 seconds, then gives up); not while the report sheet, an alert or the
+When it may appear: at least ten seconds after `start`; not while the person is typing, meaning the
+software keyboard is up or text changed in a text field or text view in the last five seconds (a
+field that merely has focus does not hold it back; it waits up to 30 seconds, then gives up); not while the report sheet, an alert or the
 crash offer is up; only in the foreground. How often: at most once per session, at most once per the
 key's `minHoursBetween` on the device, and after the person closes it twice without reporting, not
 again for seven days. Two errors a second apart are one prompt. Each prompt is a line in the log
-(`error prompt shown`, `dismissed`), so a report says whether the person had been prompted.
+(`error prompt shown`, `error prompt dismissed`, `error prompt went by itself`, `error prompt:
+reporting`), so a report says whether the person had been prompted.
 
 ## Network
 

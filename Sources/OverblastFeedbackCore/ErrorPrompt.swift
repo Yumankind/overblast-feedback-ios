@@ -5,9 +5,10 @@ import Foundation
 /// it what happened.
 ///
 /// - At least 10 seconds after start.
-/// - Not while a text field has focus or the keyboard is up, nor while the report sheet, an alert or
-///   the crash offer is showing, nor in the background: it waits, and gives up 30 seconds after the
-///   error.
+/// - Not while the person is typing (the software keyboard is up, or text changed in a text input in
+///   the last five seconds; a field that merely has focus does not count), nor while the report
+///   sheet, an alert or the crash offer is showing, nor in the background: it waits, and gives up 30
+///   seconds after the error.
 /// - At most once per session, at most once per `minHoursBetween` on the device, and after the person
 ///   closes it twice without reporting, not again for seven days.
 /// - Two errors a second apart are one prompt: it is shown a second after the first, never sooner.
@@ -28,13 +29,24 @@ public struct ErrorPromptGate: Sendable, Equatable {
   /// What the screen is doing right now.
   public struct Conditions: Sendable, Equatable {
     public var isForeground: Bool
-    public var isTextInputActive: Bool
+    /// The software keyboard is on screen.
+    public var isKeyboardUp: Bool
+    /// The last time text changed in any text input of the app.
+    public var lastTextEditAt: Date?
     public var isBlockingUIShowing: Bool
 
-    public init(isForeground: Bool = true, isTextInputActive: Bool = false, isBlockingUIShowing: Bool = false) {
+    public init(isForeground: Bool = true, isKeyboardUp: Bool = false, lastTextEditAt: Date? = nil, isBlockingUIShowing: Bool = false) {
       self.isForeground = isForeground
-      self.isTextInputActive = isTextInputActive
+      self.isKeyboardUp = isKeyboardUp
+      self.lastTextEditAt = lastTextEditAt
       self.isBlockingUIShowing = isBlockingUIShowing
+    }
+
+    /// Typing: the keyboard is up, or text changed in the last five seconds.
+    public func isTyping(at now: Date) -> Bool {
+      if isKeyboardUp { return true }
+      guard let edit = lastTextEditAt else { return false }
+      return now.timeIntervalSince(edit) < ErrorPromptGate.typingWindow
     }
   }
 
@@ -49,6 +61,8 @@ public struct ErrorPromptGate: Sendable, Equatable {
   public static let startDelay: TimeInterval = 10
   public static let mergeWindow: TimeInterval = 1
   public static let giveUpAfter: TimeInterval = 30
+  /// Text changed this recently means the person is still typing.
+  public static let typingWindow: TimeInterval = 5
   public static let quietAfterTwoDismissals: TimeInterval = 7 * 24 * 3600
 
   public let startedAt: Date
@@ -95,7 +109,7 @@ public struct ErrorPromptGate: Sendable, Equatable {
     }
     let earliest = max(startedAt.addingTimeInterval(Self.startDelay), pending.addingTimeInterval(Self.mergeWindow))
     if now < earliest { return .wait(until: earliest) }
-    if !conditions.isForeground || conditions.isTextInputActive || conditions.isBlockingUIShowing {
+    if !conditions.isForeground || conditions.isTyping(at: now) || conditions.isBlockingUIShowing {
       return .wait(until: now.addingTimeInterval(0.5))
     }
     return .show

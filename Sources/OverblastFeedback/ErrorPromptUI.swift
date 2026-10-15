@@ -17,14 +17,18 @@ enum ErrorPromptUI {
   private static var startedAt = Date()
   private static var loopRunning = false
   private static var keyboardUp = false
+  private static var lastTextEditAt: Date?
   private static var observers: [NSObjectProtocol] = []
   private static var pill: PromptPill?
 
   /// At `start`: applies the kept config at once, then reads the door and applies its answer.
   static func start() {
     startedAt = Date()
-    #if canImport(UIKit) && !os(visionOS)
+    // Typing holds the prompt back (contract §3.6): the software keyboard on screen, or text changed
+    // in any of the app's text inputs in the last five seconds. A field that only has focus does not.
     let center = NotificationCenter.default
+    #if canImport(UIKit)
+    #if !os(visionOS)
     observers.append(center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { _ in
       MainActor.assumeIsolated { keyboardUp = true }
     })
@@ -32,6 +36,15 @@ enum ErrorPromptUI {
       MainActor.assumeIsolated { keyboardUp = false }
     })
     #endif
+    let edits: [Notification.Name] = [UITextField.textDidChangeNotification, UITextView.textDidChangeNotification]
+    #else
+    let edits: [Notification.Name] = [NSControl.textDidChangeNotification, NSText.didChangeNotification]
+    #endif
+    for name in edits {
+      observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
+        MainActor.assumeIsolated { lastTextEditAt = Date() }
+      })
+    }
     apply()
     Task { @MainActor in
       await OverblastFeedback.refreshRemoteConfig()
@@ -80,27 +93,21 @@ enum ErrorPromptUI {
     let window = ScreenContext.appWindow()
     return ErrorPromptGate.Conditions(
       isForeground: UIApplication.shared.applicationState == .active,
-      isTextInputActive: keyboardUp || (window.map(hasTextFocus) ?? false),
+      isKeyboardUp: keyboardUp,
+      lastTextEditAt: lastTextEditAt,
       isBlockingUIShowing: FeedbackPresenter.shared.isPresenting || pill != nil || (window.map(isShowingAlert) ?? false)
     )
     #else
     let window = ScreenContext.appWindow()
-    var textFocus = false
-    if let text = window?.firstResponder as? NSText, text.isEditable { textFocus = true }
     return ErrorPromptGate.Conditions(
       isForeground: NSApplication.shared.isActive,
-      isTextInputActive: textFocus,
+      lastTextEditAt: lastTextEditAt,
       isBlockingUIShowing: FeedbackPresenter.shared.isPresenting || pill != nil || window?.attachedSheet != nil || NSApplication.shared.modalWindow != nil
     )
     #endif
   }
 
   #if canImport(UIKit)
-  static func hasTextFocus(_ view: UIView) -> Bool {
-    if view.isFirstResponder, view is UITextField || view is UITextView || view is UISearchBar || view is UIKeyInput { return true }
-    return view.subviews.contains(where: hasTextFocus)
-  }
-
   static func isShowingAlert(_ window: UIWindow) -> Bool {
     var vc = window.rootViewController
     while let presented = vc?.presentedViewController {
@@ -118,7 +125,7 @@ enum ErrorPromptUI {
     pill = PromptPill.show(
       onReport: {
         ErrorPromptCenter.shared.reported()
-        OverblastFeedback.log(.info, "error prompt: report", source: FeedbackLogBuffer.source)
+        OverblastFeedback.log(.info, "error prompt: reporting", source: FeedbackLogBuffer.source)
         hide()
         OverblastFeedback.present(category: .bug, trigger: .errorPrompt)
       },
