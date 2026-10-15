@@ -42,7 +42,7 @@ final class MacResultTests: XCTestCase {
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
       session: ResultStubProtocol.session(),
       store: PendingStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("obf-mac-result-\(UUID().uuidString)")),
-      defaults: UserDefaults(suiteName: "obf-tests-\(UUID().uuidString)")
+      defaults: scratchDefaults("obf-tests")
     )
     window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 600, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false

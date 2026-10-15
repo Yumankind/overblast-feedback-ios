@@ -203,7 +203,7 @@ final class SessionTests: XCTestCase {
       reporter: nil,
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
       session: nil, store: PendingStore(directory: directory.appendingPathComponent("pending")),
-      defaults: UserDefaults(suiteName: "obf-tests-\(UUID().uuidString)")
+      defaults: scratchDefaults("obf-tests")
     )
     OverblastFeedback.logBuffer.removeAll()
     OverblastFeedback.error("checkout failed: token=sk-abcdefghijklmnopqrstuvwx")

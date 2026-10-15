@@ -34,7 +34,7 @@ final class SnapshotRenders: XCTestCase {
   }
 
   private func start(theme: FeedbackTheme = .system, categories: [FeedbackCategory] = FeedbackCategory.allCases, style: UIUserInterfaceStyle = .light) throws {
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: "obf-snap-\(UUID().uuidString)"))
+    let defaults = scratchDefaults("obf-snap")
     let cached = RemoteConfigStore.Cached(config: FeedbackRemoteConfig(categories: categories), etag: nil, fetchedAt: Date())
     defaults.set(try JSONEncoder().encode(cached), forKey: RemoteConfigStore.cacheKey)
     OverblastFeedback.configure(

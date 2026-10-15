@@ -121,7 +121,7 @@ final class PayloadEncodingTests: XCTestCase {
   }
 
   func testDeviceIdIsStableAndShaped() throws {
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: "overblast-feedback-tests-\(UUID().uuidString)"))
+    let defaults = scratchDefaults("overblast-feedback-tests")
     let first = DeviceInfo.deviceId(defaults: defaults)
     XCTAssertEqual(first, DeviceInfo.deviceId(defaults: defaults))
     XCTAssertEqual(first.count, 32)

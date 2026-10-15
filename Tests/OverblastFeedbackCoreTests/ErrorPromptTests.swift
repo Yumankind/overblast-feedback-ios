@@ -126,7 +126,7 @@ final class ErrorPromptTests: XCTestCase {
 
   func testRequestsCountOnlyFromTheAppsOwnHostsAndOnly5xxOrNoAnswer() throws {
     let center = ErrorPromptCenter()
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: "obf-prompt-\(UUID().uuidString)"))
+    let defaults = scratchDefaults("obf-prompt")
     let fired = Counter()
     center.activate(startedAt: t0, settings: .init(enabled: true, on: [.serverError, .network], minHoursBetween: 24), appHosts: ["API.example.com"], defaults: defaults) { fired.bump() }
     center.noteRequest(host: "api.example.com", status: 404, at: at(20))
@@ -195,7 +195,7 @@ final class ErrorPromptTests: XCTestCase {
   }
 
   func testAReportInACategoryTheKeyDoesNotTakeIsNotSent() async throws {
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: "obf-categories-\(UUID().uuidString)"))
+    let defaults = scratchDefaults("obf-categories")
     let cached = RemoteConfigStore.Cached(config: FeedbackRemoteConfig(categories: [.bug]), etag: nil, fetchedAt: Date())
     defaults.set(try JSONEncoder().encode(cached), forKey: RemoteConfigStore.cacheKey)
     let pending = FileManager.default.temporaryDirectory.appendingPathComponent("obf-cat-\(UUID().uuidString)")
@@ -220,7 +220,7 @@ final class ErrorPromptTests: XCTestCase {
     OverblastFeedback.configure(
       key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
-      session: StubProtocol.session(), store: PendingStore(directory: pending), defaults: UserDefaults(suiteName: "obf-categories-\(UUID().uuidString)")
+      session: StubProtocol.session(), store: PendingStore(directory: pending), defaults: scratchDefaults("obf-categories")
     )
   }
 
@@ -242,7 +242,7 @@ final class ErrorPromptTests: XCTestCase {
   }
 
   func testTheConfigIsKeptReadEveryFiveMinutesAndUsedOffline() async throws {
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: "obf-config-\(UUID().uuidString)"))
+    let defaults = scratchDefaults("obf-config")
     let client = FeedbackClient(endpoint: URL(string: "https://feedback.test/v1/feedback")!, key: "obfk_TESTKEY00000000000000000", session: StubProtocol.session())
     let store = RemoteConfigStore(defaults: defaults)
     XCTAssertEqual(store.current, .defaults)

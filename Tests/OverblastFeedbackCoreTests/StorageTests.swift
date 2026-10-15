@@ -2,10 +2,12 @@ import XCTest
 @_spi(OverblastPlatform) @testable import OverblastFeedbackCore
 
 /// Where the library keeps things: one place per app, and the move from 0.2.0's shared names. Every
-/// test works under its own temporary folder and its own random suite names, never the real ones.
+/// test works under its own temporary folder and its own in-memory defaults (`MemoryDefaults`), never
+/// the real ones: the migration's suites and the domains it reads by name all live in `store`.
 final class StorageTests: XCTestCase {
   private var base: URL!
-  private var suites: [String] = []
+  private var store = MemoryDefaults.Store()
+  private var domains: UserDefaults { MemoryDefaults(store: store, name: nil)! }
 
   override func setUp() {
     super.setUp()
@@ -14,19 +16,16 @@ final class StorageTests: XCTestCase {
 
   override func tearDown() {
     try? FileManager.default.removeItem(at: base)
-    for name in suites { UserDefaults.standard.removePersistentDomain(forName: name) }
-    suites = []
+    store = MemoryDefaults.Store()
     super.tearDown()
   }
 
   private func suiteName(_ label: String) -> String {
-    let name = "obf-storage-\(label)-\(UUID().uuidString)"
-    suites.append(name)
-    return name
+    "obf-storage-\(label)-\(UUID().uuidString)"
   }
 
   private func suite(_ name: String) throws -> UserDefaults {
-    try XCTUnwrap(UserDefaults(suiteName: name))
+    try XCTUnwrap(MemoryDefaults(store: store, name: name))
   }
 
   private func draft(_ message: String) -> FeedbackPayload {
@@ -110,7 +109,7 @@ final class StorageTests: XCTestCase {
     let newRoot = FeedbackStorage.rootDirectory(base: base, host: "com.example.app")
     let target = try suite(targetName)
 
-    let outcome = FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: true)
+    let outcome = FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: true, domains: domains)
     XCTAssertEqual(outcome.movedDefaults, [DeviceInfo.deviceIdKey])
     XCTAssertEqual(outcome.movedFolders, ["session", "pending"])
 
@@ -124,10 +123,10 @@ final class StorageTests: XCTestCase {
 
     // The old entries are gone, so a second launch has nothing to move.
     // (A removed domain can read back as empty rather than nil within the same process.)
-    XCTAssertTrue((UserDefaults.standard.persistentDomain(forName: legacyName) ?? [:]).isEmpty)
+    XCTAssertTrue((domains.persistentDomain(forName: legacyName) ?? [:]).isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: legacyRoot.appendingPathComponent("session").path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: legacyRoot.appendingPathComponent("pending").path))
-    let again = FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: true)
+    let again = FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: true, domains: domains)
     XCTAssertEqual(again, FeedbackStorage.MigrationOutcome())
     XCTAssertEqual(DeviceInfo.deviceId(defaults: target), legacyId)
   }
@@ -141,7 +140,7 @@ final class StorageTests: XCTestCase {
     target.set(newId, forKey: DeviceInfo.deviceIdKey)
     try PendingStore(directory: newRoot.appendingPathComponent("pending")).save(draft("kept by 0.2.1"), now: Date().addingTimeInterval(1))
 
-    FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: true)
+    FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: true, domains: domains)
     XCTAssertEqual(DeviceInfo.deviceId(defaults: target), newId)
     XCTAssertEqual(PendingStore(directory: newRoot.appendingPathComponent("pending")).all().map(\.payload.message), ["kept by 0.2.0", "kept by 0.2.1"])
     XCTAssertFalse(FileManager.default.fileExists(atPath: legacyRoot.appendingPathComponent("pending").path))
@@ -154,7 +153,7 @@ final class StorageTests: XCTestCase {
     let legacyRoot = try leaveLegacyState(suite: legacyName, id: legacyId)
     let newRoot = FeedbackStorage.rootDirectory(base: base, host: "app.deskslap.mac")
 
-    let outcome = FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: false)
+    let outcome = FeedbackStorage.migrate(legacyRoot: legacyRoot, newRoot: newRoot, legacyDefaultsName: legacyName, defaults: target, legacyIsPrivate: false, domains: domains)
     XCTAssertEqual(outcome, FeedbackStorage.MigrationOutcome())
 
     // A fresh start: no false "The app closed unexpectedly", no other app's kept reports, an id of
@@ -164,7 +163,7 @@ final class StorageTests: XCTestCase {
     XCTAssertNotEqual(DeviceInfo.deviceId(defaults: target), legacyId)
 
     // The shared entries are untouched, for the apps still on 0.2.0.
-    XCTAssertEqual(UserDefaults.standard.persistentDomain(forName: legacyName)?[DeviceInfo.deviceIdKey] as? String, legacyId)
+    XCTAssertEqual(domains.persistentDomain(forName: legacyName)?[DeviceInfo.deviceIdKey] as? String, legacyId)
     XCTAssertTrue(FileManager.default.fileExists(atPath: legacyRoot.appendingPathComponent("session/session.json").path))
     XCTAssertEqual(PendingStore(directory: legacyRoot.appendingPathComponent("pending")).all().map(\.payload.message), ["kept by 0.2.0"])
   }

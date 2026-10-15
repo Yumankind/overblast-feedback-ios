@@ -208,7 +208,7 @@ final class AppKitTests: XCTestCase {
       key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
       session: nil, store: PendingStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("obf-mac-\(UUID().uuidString)")),
-      defaults: UserDefaults(suiteName: "obf-tests-\(UUID().uuidString)")
+      defaults: scratchDefaults("obf-tests")
     )
     let short = NSWindow(contentRect: NSRect(x: 100, y: 200, width: 800, height: 500), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
     short.isReleasedWhenClosed = false
@@ -238,7 +238,7 @@ final class AppKitTests: XCTestCase {
       key: "obfk_TESTKEY00000000000000000", endpoint: URL(string: "https://feedback.test/v1/feedback")!, reporter: nil,
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
       session: nil, store: PendingStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("obf-mac-\(UUID().uuidString)")),
-      defaults: UserDefaults(suiteName: "obf-tests-\(UUID().uuidString)")
+      defaults: scratchDefaults("obf-tests")
     )
     let tiny = NSWindow(contentRect: NSRect(x: 100, y: 200, width: 500, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
     tiny.isReleasedWhenClosed = false
@@ -314,7 +314,7 @@ final class AppKitTests: XCTestCase {
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
       session: nil,
       store: PendingStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("overblast-feedback-mac-\(UUID().uuidString)")),
-      defaults: UserDefaults(suiteName: "overblast-feedback-tests-\(UUID().uuidString)")
+      defaults: scratchDefaults("overblast-feedback-tests")
     )
     window.orderFront(nil)
     FeedbackPresenter.shared.present(category: .idea, message: "hello", in: window)

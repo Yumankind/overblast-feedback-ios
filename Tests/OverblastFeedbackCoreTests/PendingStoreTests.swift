@@ -104,7 +104,7 @@ final class PendingStoreTests: XCTestCase {
       options: FeedbackOptions(captureOSLog: false, retryPendingOnStart: false),
       session: StubProtocol.session(),
       store: store,
-      defaults: UserDefaults(suiteName: "overblast-feedback-tests-\(UUID().uuidString)")
+      defaults: scratchDefaults("overblast-feedback-tests")
     )
     OverblastFeedback.logBuffer.removeAll()
     OverblastFeedback.log(.error, "boom with password=hunter2")
