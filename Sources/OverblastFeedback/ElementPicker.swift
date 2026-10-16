@@ -33,6 +33,12 @@ enum ElementPicker {
     let insidePrivate = PrivacyMask.isInsidePrivate(view) || privateRects.contains { $0.contains(point) }
     var steps = path(to: view, in: window)
 
+    // 0. The app's own answer first (`OverblastFeedback.elementResolver`): a sticker on a canvas or a
+    // sprite has no view and no accessibility element, and only the app knows what is there.
+    if let resolved = OverblastFeedback.elementResolver?(point, window) {
+      return Self.selection(for: resolved, at: point, in: window.bounds, path: steps, insidePrivate: insidePrivate, privateRects: privateRects)
+    }
+
     // Only when the view found is SwiftUI's own: a UIKit view hosted inside SwiftUI (a
     // `UIViewRepresentable`) is found exactly, like any other UIKit view.
     if isSwiftUIHost(view) {
@@ -66,6 +72,27 @@ enum ElementPicker {
       label: insidePrivate ? nil : label(of: view),
       frame: frame,
       viewport: viewport
+    )
+    return Selection(element: element, frame: frame)
+  }
+
+  /// The selection for an element the app named: its frame (or a 44-point square round the point
+  /// when it gave none) kept on screen, the view path with the app's type at the end, and no label
+  /// when any of it lies in a private area.
+  static func selection(
+    for resolved: OverblastFeedback.PointedElement, at point: CGPoint, in bounds: CGRect,
+    path steps: [String], insidePrivate: Bool, privateRects: [CGRect]
+  ) -> Selection {
+    let asked = resolved.frame.isEmpty ? CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44) : resolved.frame
+    let clipped = asked.intersection(bounds)
+    let frame = clipped.isNull || clipped.isEmpty ? CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44).intersection(bounds) : clipped
+    let element = NativeAnchorBuilder.build(
+      path: steps + [resolved.type],
+      type: resolved.type,
+      id: resolved.id,
+      label: insidePrivate || privateRects.contains(where: { $0.intersects(frame) }) ? nil : resolved.label,
+      frame: frame,
+      viewport: bounds.size
     )
     return Selection(element: element, frame: frame)
   }

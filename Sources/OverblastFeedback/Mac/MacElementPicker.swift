@@ -26,6 +26,16 @@ enum ElementPicker {
     guard CGRect(origin: .zero, size: viewport).contains(point) else { return nil }
     let native = MacGeometry.native(point, in: content)
     var view = deepestView(at: native, in: content, content: content) ?? content
+    // 0. The app's own answer first (`OverblastFeedback.elementResolver`): something drawn on a
+    // canvas has no view and no accessibility element, and only the app knows what is there.
+    if let resolved = OverblastFeedback.elementResolver?(point, window) {
+      let named = isSwiftUIHost(view) && !(view is NSControl) ? swiftUIRoot(of: view, content: content) : view
+      let insidePrivate = PrivacyMask.isInsidePrivate(view) || privateRects.contains { $0.contains(point) }
+      return selection(
+        for: resolved, at: point, in: CGRect(origin: .zero, size: viewport),
+        path: path(to: named, in: window, content: content), insidePrivate: insidePrivate, privateRects: privateRects
+      )
+    }
     // A control is found exactly even when SwiftUI made it (`TextField`, `Toggle` and `Picker` are
     // AppKit controls underneath). Any other view of SwiftUI's own (a focus ring, a drawing layer)
     // is part of the hosting view's picture, so the search starts from the hosting view.
@@ -86,6 +96,27 @@ enum ElementPicker {
   // MARK: AppKit
 
   /// `point` is in `content`'s own coordinates.
+  /// The selection for an element the app named: its frame (or a 44-point square round the point
+  /// when it gave none) kept inside the content view, the view path with the app's type at the end,
+  /// and no label when any of it lies in a private area.
+  static func selection(
+    for resolved: OverblastFeedback.PointedElement, at point: CGPoint, in bounds: CGRect,
+    path steps: [String], insidePrivate: Bool, privateRects: [CGRect]
+  ) -> Selection {
+    let spot = CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44).intersection(bounds)
+    let clipped = (resolved.frame.isEmpty ? spot : resolved.frame).intersection(bounds)
+    let frame = clipped.isNull || clipped.isEmpty ? spot : clipped
+    let element = NativeAnchorBuilder.build(
+      path: steps + [resolved.type],
+      type: resolved.type,
+      id: resolved.id,
+      label: insidePrivate || privateRects.contains(where: { $0.intersects(frame) }) ? nil : resolved.label,
+      frame: frame,
+      viewport: bounds.size
+    )
+    return Selection(element: element, frame: frame)
+  }
+
   static func deepestView(at point: CGPoint, in root: NSView, content: NSView) -> NSView? {
     let local = root.convert(point, from: content)
     guard isVisible(root), root.bounds.contains(local) else { return nil }

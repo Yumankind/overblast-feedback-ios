@@ -468,17 +468,16 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
     #if os(visionOS)
     bottomBar.backgroundColor = .clear
     #else
-    bottomBar.backgroundColor = .systemGroupedBackground
-    let hairline = UIView()
-    hairline.backgroundColor = .separator
-    hairline.translatesAutoresizingMaskIntoConstraints = false
-    bottomBar.addSubview(hairline)
-    NSLayoutConstraint.activate([
-      hairline.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
-      hairline.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
-      hairline.topAnchor.constraint(equalTo: bottomBar.topAnchor),
-      hairline.heightAnchor.constraint(equalToConstant: 1 / max(traitCollection.displayScale, 1)),
-    ])
+    // ON iOS 26 THE BAR IS THE SHEET (2026-10-16, Deskslap on a real iPhone). A sheet at its medium
+    // detent is drawn in glass there, and a bar painted with its own grouped background sat in it as
+    // a lighter block; at the large detent the sheet turns opaque and the two happened to agree. So
+    // from iOS 26 the bar paints nothing and has no hairline: the sheet's own material shows through
+    // at every height, and the scroll view ends at the bar's top, so no content passes under it.
+    if #available(iOS 26, *) {
+      bottomBar.backgroundColor = .clear
+    } else {
+      buildBarBackground()
+    }
     #endif
     view.addSubview(bottomBar)
 
@@ -498,6 +497,23 @@ final class FeedbackSheetController: UIViewController, UIAdaptivePresentationCon
       sendButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
     ])
   }
+
+  #if !os(visionOS)
+  /// Before iOS 26 the sheet is opaque at every detent: the bar matches it and a hairline marks it off.
+  private func buildBarBackground() {
+    bottomBar.backgroundColor = .systemGroupedBackground
+    let hairline = UIView()
+    hairline.backgroundColor = .separator
+    hairline.translatesAutoresizingMaskIntoConstraints = false
+    bottomBar.addSubview(hairline)
+    NSLayoutConstraint.activate([
+      hairline.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+      hairline.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+      hairline.topAnchor.constraint(equalTo: bottomBar.topAnchor),
+      hairline.heightAnchor.constraint(equalToConstant: 1 / max(traitCollection.displayScale, 1)),
+    ])
+  }
+  #endif
 
   private func styleSend() {
     var config = UIButton.Configuration.filled()

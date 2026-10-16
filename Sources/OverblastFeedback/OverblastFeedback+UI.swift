@@ -3,6 +3,27 @@
 import UIKit
 
 extension OverblastFeedback {
+  /// The app's own answer to "what is under this point?", asked first when the person uses Point at
+  /// the problem. For what the library cannot see: things drawn on one canvas (stickers, a drawing,
+  /// a map, a game's sprites), and SwiftUI views the app did not mark with `.overblastElement(_:)`
+  /// (SwiftUI publishes its accessibility tree only while VoiceOver or another assistive technology
+  /// runs, so without a marker a SwiftUI view can only be named as a spot).
+  ///
+  /// `point` and the returned `frame` are in `window`'s own points. Convert with
+  /// `canvasView.convert(point, from: nil)` and back with `canvasView.convert(rect, to: nil)`.
+  /// Return nil to let the library search as usual. A label that lies in a private area is dropped
+  /// like any other.
+  ///
+  /// ```swift
+  /// OverblastFeedback.elementResolver = { point, _ in
+  ///   guard let sticker = board.sticker(at: boardView.convert(point, from: nil)) else { return nil }
+  ///   return .init(type: "sticker", id: sticker.id, label: sticker.name,
+  ///                frame: boardView.convert(sticker.frame, to: nil))
+  /// }
+  /// ```
+  @MainActor
+  public static var elementResolver: (@MainActor (CGPoint, UIWindow) -> PointedElement?)?
+
   /// Sets the library up and, on an iPhone or iPad unless `options.shakeToReport` is false, opens
   /// the report sheet when the device is shaken. Call it once, early
   /// (`application(_:didFinishLaunchingWithOptions:)` or your `App`'s `init`).

@@ -7,6 +7,15 @@ import SwiftUI
 // a Mac; the sheet opens from `present()`, behind a Settings button (`OverblastFeedbackButton`) or a
 // Help menu item.
 extension OverblastFeedback {
+  /// The app's own answer to "what is under this point?", asked first when the person uses Point at
+  /// the problem: for what the library cannot see (things drawn on one canvas, SwiftUI views without
+  /// an `.overblastElement(_:)` marker). `point` and the returned `frame` are in the window content
+  /// view's points from its TOP-LEFT corner. In a view: `let p = view.convert(NSPoint(x: point.x,
+  /// y: content.bounds.height - point.y), from: content)` (and the reverse for the frame), or use a
+  /// flipped content view. Return nil to let the library search as usual.
+  @MainActor
+  public static var elementResolver: (@MainActor (CGPoint, NSWindow) -> PointedElement?)?
+
   /// Sets the library up and tells it which window the person is in. Call it once, early (your
   /// `App`'s `init`, or `applicationDidFinishLaunching(_:)`). Nothing is installed in the app: the
   /// report sheet opens only from `present()`.

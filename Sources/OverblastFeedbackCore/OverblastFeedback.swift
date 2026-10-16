@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// What the library does beyond the required. Every default is the conservative one.
@@ -471,6 +472,27 @@ public enum OverblastFeedback {
   /// their result directly and do not call this.
   @MainActor
   public static var onReportResult: (@MainActor (FeedbackResult) -> Void)?
+
+  /// What the app says is under a point the person pointed at: the answer to
+  /// `OverblastFeedback.elementResolver` (UIKit and AppKit set the closure; see there).
+  public struct PointedElement: Sendable, Equatable {
+    /// What it is, in the app's own words: `"sticker"`, `"canvas.handle"`, `"Toolbar.Undo"`.
+    public var type: String
+    /// The app's own id for it, the thing the team searches the code or the data for.
+    public var id: String?
+    /// What it says or shows, as a person would name it. Dropped when it lies in a private area.
+    public var label: String?
+    /// Where it is, in the same coordinates as the point the resolver was given. An empty frame
+    /// means "here", and a 44-point square round the point is used.
+    public var frame: CGRect
+
+    public init(type: String, id: String? = nil, label: String? = nil, frame: CGRect = .zero) {
+      self.type = type
+      self.id = id
+      self.label = label
+      self.frame = frame
+    }
+  }
 
   /// The sheets' one way to hand a Send's outcome out: the caller's own `onResult`, then the
   /// app-wide `onReportResult`.

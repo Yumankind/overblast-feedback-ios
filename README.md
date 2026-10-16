@@ -7,7 +7,7 @@ recent logs, the device, their account reference in your product, and a screensh
 attach one. After an unexpected end, the next launch offers to send a report about it.
 
 ```swift
-.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.1")
+.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.2")
 ```
 
 ```swift
@@ -111,6 +111,7 @@ row. From UIKit or AppKit, call `OverblastFeedback.present()` from your own butt
 | `recordNetwork()` | The opt-in network recorder for `URLSession.shared`. |
 | `view.overblastPrivate = true`, `.overblastPrivate()` | Never in a screenshot (`UIView`, `NSView`, SwiftUI). |
 | `.overblastElement("id")` | Makes a SwiftUI view selectable by name (see below). |
+| `OverblastFeedback.elementResolver` | Names what is drawn on a canvas (a sticker, a sprite) when the person points at it. |
 
 ### The sheet
 
@@ -301,6 +302,19 @@ point.
   SwiftUI's text fields, which are platform text fields underneath.
 - **Overlays that let touches through** (a transparent full-screen layer, a floating bar host) are
   looked through, the way a tap would be: what is selected is what the person sees.
+- **Things drawn on one canvas** (stickers, a drawing, a map, sprites) have no view and no
+  accessibility element, so only the app knows what is under the finger. Tell the library with
+  `OverblastFeedback.elementResolver`, which is asked **first** and may return nil to let the search
+  above run as usual. The point and the frame are in the window's own points (on macOS, the content
+  view's points from its top-left corner); a label inside a private area is dropped as always.
+
+  ```swift
+  OverblastFeedback.elementResolver = { point, _ in
+    guard let sticker = board.sticker(at: boardView.convert(point, from: nil)) else { return nil }
+    return .init(type: "sticker", id: sticker.id, label: sticker.name,
+                 frame: boardView.convert(sticker.frame, to: nil))
+  }
+  ```
 
 The element's box is drawn on the screenshot (when there is one) and the report says so.
 
@@ -540,6 +554,15 @@ iPad app running on a Mac or on Apple Vision Pro, nothing is ever replaced.
 the reporter, a private view, a secure field, a log line, the Settings button and the Help menu item.
 
 ## Changelog
+
+### 0.2.2
+
+- **Point at things drawn on a canvas**: `OverblastFeedback.elementResolver` lets the app name what
+  is under the finger (a sticker, a sprite) when it has no view of its own; asked first, nil falls
+  back to the library's search. See [Pointing at the problem](#pointing-at-the-problem).
+- **iOS 26: the Send bar matches the sheet.** At the medium detent the sheet is glass, and the bar's
+  own background sat in it as a lighter block; from iOS 26 the bar paints nothing and has no
+  hairline. Earlier versions keep the opaque bar their opaque sheet needs.
 
 ### 0.2.1
 
