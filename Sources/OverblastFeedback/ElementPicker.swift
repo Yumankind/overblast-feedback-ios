@@ -199,8 +199,18 @@ enum ElementPicker {
     }
   }
 
+  /// A view SwiftUI draws into. Not only classes in the SwiftUI module: the system wraps SwiftUI
+  /// in hosting views of its own (iOS 26's floating toolbar is a `FloatingBarHostingView` that
+  /// lives outside it), so the class chain is walked and any hosting view counts. Missing one
+  /// meant its `.overblastElement` markers were never searched and the whole bar was named.
   static func isSwiftUIHost(_ view: UIView) -> Bool {
-    String(reflecting: type(of: view)).hasPrefix("SwiftUI.")
+    var cls: AnyClass? = type(of: view)
+    while let current = cls, current != UIView.self {
+      let name = String(reflecting: current)
+      if name.hasPrefix("SwiftUI.") || name.hasSuffix("HostingView") || name.contains("HostingView<") { return true }
+      cls = class_getSuperclass(current)
+    }
+    return false
   }
 
   /// The outermost of the SwiftUI views that hold `view`: the hosting view, normally.

@@ -45,8 +45,10 @@ extension View {
   /// this one, carrying `id`, so the element picker finds it like any UIKit view: the element's `id`
   /// is `id`, its `type` is this view's own type (`Button`, `CartRow`), and its rectangle is this
   /// view's frame.
-  public func overblastElement(_ id: String, label: String? = nil) -> some View {
-    background(OverblastElementMarker(id: id, label: label, type: NativeAnchorBuilder.cleanTypeName(String(describing: Self.self))))
+  /// `type` names what it is in the app's own words ("sticker"); without it, the marked view's
+  /// own type is used, which for a view wrapped in a modifier (`.help(…)`) is the wrapper's.
+  public func overblastElement(_ id: String, label: String? = nil, type: String? = nil) -> some View {
+    background(OverblastElementMarker(id: id, label: label, type: type ?? NativeAnchorBuilder.cleanTypeName(String(describing: Self.self))))
   }
 }
 

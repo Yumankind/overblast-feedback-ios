@@ -7,7 +7,7 @@ recent logs, the device, their account reference in your product, and a screensh
 attach one. After an unexpected end, the next launch offers to send a report about it.
 
 ```swift
-.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.2")
+.package(url: "https://github.com/Yumankind/overblast-feedback-ios", from: "0.2.3")
 ```
 
 ```swift
@@ -295,7 +295,7 @@ point.
 
   ```swift
   Button("Checkout") { … }
-    .overblastElement("cart.checkout")              // optional label: .overblastElement("…", label: "Checkout")
+    .overblastElement("cart.checkout")              // optional: label: "Checkout", type: "button"
   ```
 
   A UIKit or AppKit view inside SwiftUI (a representable) is found exactly, by its class, as are
@@ -554,6 +554,15 @@ iPad app running on a Mac or on Apple Vision Pro, nothing is ever replaced.
 the reporter, a private view, a secure field, a log line, the Settings button and the Help menu item.
 
 ## Changelog
+
+### 0.2.3
+
+- **iOS 26's floating toolbar can be pointed at.** Its items live in a system hosting view outside
+  the SwiftUI module, so the picker named the whole bar and never searched its
+  `.overblastElement` markers; any hosting view in a view's class chain now counts as SwiftUI.
+- **`.overblastElement(_:label:type:)`**: an optional `type` names what the view is in the app's
+  words ("sticker"). Without it, the marked view's own type is used, which for a view wrapped in a
+  modifier is the wrapper's (`HelpView`).
 
 ### 0.2.2
 

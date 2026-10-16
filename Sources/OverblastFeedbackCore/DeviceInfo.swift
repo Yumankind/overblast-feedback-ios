@@ -3,7 +3,7 @@ import Foundation
 /// The install's random id and the facts about the device that go in `context`.
 public enum DeviceInfo {
   public static let sdkName = "overblast-feedback-ios"
-  public static let sdkVersion = "0.2.2"
+  public static let sdkVersion = "0.2.3"
 
   /// The `UserDefaults` suite the device id lives in: `network.deployd.overblast-feedback.<bundle id>`.
   /// A suite of its own, so an app that clears its standard defaults on sign-out does not make every

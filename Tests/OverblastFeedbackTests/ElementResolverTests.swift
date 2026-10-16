@@ -64,5 +64,14 @@ final class ElementResolverTests: XCTestCase {
     XCTAssertNotEqual(s.element.type, "sticker")
     XCTAssertEqual(s.element.type, "NSView")
   }
+
+  func testAHostingViewOutsideTheSwiftUIModuleCountsAsSwiftUI() {
+    // iOS 26's floating toolbar wraps SwiftUI in a system class named ...HostingView: its markers
+    // must be searched, so it has to read as a SwiftUI host.
+    final class FloatingBarHostingView: NSView {}
+    XCTAssertTrue(ElementPicker.isSwiftUIHost(FloatingBarHostingView()))
+    XCTAssertFalse(ElementPicker.isSwiftUIHost(NSView()))
+    XCTAssertFalse(ElementPicker.isSwiftUIHost(NSTextField()))
+  }
 }
 #endif
